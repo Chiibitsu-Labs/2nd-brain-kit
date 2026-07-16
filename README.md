@@ -8,7 +8,7 @@ You don't need to be technical to use this. There's no code to write.
 
 ## Start here → one button
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/chiibitsu/2nd-brain-kit&root-directory=vault-mcp&project-name=my-second-brain&repository-name=my-second-brain&env=VAULT_GITHUB_TOKEN,VAULT_MCP_TOKEN,OAUTH_SIGNING_SECRET,VAULT_OWNER_PASSPHRASE,VAULT_OWNER,VAULT_REPO)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/chiibitsu-labs/2nd-brain-kit&root-directory=vault-mcp&project-name=my-second-brain&repository-name=my-second-brain&env=VAULT_GITHUB_TOKEN,VAULT_MCP_TOKEN,OAUTH_SIGNING_SECRET,VAULT_OWNER_PASSPHRASE,VAULT_OWNER,VAULT_REPO)
 
 That button does three things at once, all in your browser:
 
