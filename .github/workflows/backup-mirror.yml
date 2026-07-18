@@ -60,5 +60,11 @@ jobs:
           # every ref, not just the current branch; a no-op if this vault
           # doesn't use LFS.
           git -C repo.git lfs fetch --all origin
+          # --mirror pushes *every* ref, not just branches/tags — in a repo
+          # with pull requests that includes refs/pull/*, which can fail
+          # against a second host's read-only PR namespace or copy
+          # review-only refs somewhere they don't belong. Prune those
+          # before pushing so only refs/heads/* and refs/tags/* go out.
+          git -C repo.git for-each-ref --format 'delete %(refname)' 'refs/pull/*' | git -C repo.git update-ref --stdin
           git -C repo.git push --mirror "$MIRROR_URL"
           git -C repo.git lfs push --all "$MIRROR_URL"
