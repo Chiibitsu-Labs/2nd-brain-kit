@@ -61,7 +61,7 @@ then the list. Add one line at the top of the list:
 ## 5. Save
 
 - Working via the remote vault connector: use its write tool for both files.
-- Working on a local clone (Claude Code): `git add` the two files by exact path (never `-A` or `.`), commit message `"Improve: <one-line summary>"`, push to the current branch.
+- Working on a local clone (Claude Code): `git add` the two files by exact path (never `-A` or `.`), then commit with `git commit --only -- <path1> <path2> -m "Improve: <one-line summary>"` — the `--only` restricts the commit to exactly those two paths regardless of anything else already staged in the index (a plain `git commit` after `git add` commits *everything* staged, which could silently sweep in unrelated in-progress work). Push to the current branch.
 
 ## 6. Tell the owner
 
