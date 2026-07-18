@@ -18,6 +18,13 @@ on:
     - cron: "37 5 * * *" # daily ~05:37 UTC
   workflow_dispatch: {}
 
+# Push-triggered runs can overlap; without this, an older run that clones
+# before a newer commit can still push --mirror after the newer run and
+# rewind the off-site copy to a stale state. Queue runs instead of racing.
+concurrency:
+  group: backup-mirror
+  cancel-in-progress: false
+
 jobs:
   mirror:
     runs-on: ubuntu-latest
