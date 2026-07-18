@@ -1,16 +1,27 @@
 name: Vault template sync — pull kit updates
 
 # Periodically pulls the "kit infrastructure" files — .claude/ (skills,
-# hooks, settings), the backup workflows, this file itself, .gitignore,
-# BACKUP.md, and the vault-mcp connector code — from the canonical
-# template repo and opens a PR here so you can review before merging.
-# Never auto-merges, and never touches anything else: your notes, daily/,
-# 00_moc/, ai-improvements/, README.md, and any workflow you've added
-# yourself are untouched — only the fixed path list below is ever synced.
+# hooks, settings), .gitignore, BACKUP.md, and the vault-mcp connector
+# code — from the canonical template repo and opens a PR here so you can
+# review before merging. Never auto-merges, and never touches anything
+# else: your notes, daily/, 00_moc/, ai-improvements/, README.md, and any
+# workflow you've added yourself are untouched — only the fixed path list
+# below is ever synced.
 #
 # This is how fixes like security patches reach vaults that were already
 # deployed via the button before the fix shipped, without you having to
 # notice, ask, or manually copy files over.
+#
+# Workflow files (backup-snapshot.yml, backup-mirror.yml, this file) are
+# handled differently: GitHub hard-blocks the automatic token every
+# Actions job gets from creating or updating anything under
+# .github/workflows/ — no permissions setting fixes this, it's a
+# platform-level anti-privilege-escalation rule. So when one of those 3
+# files changes upstream, this workflow can't apply it directly; instead
+# it writes/updates .github/PENDING_WORKFLOW_UPDATE.md with the new
+# content and instructions to paste it in via GitHub's web editor (which,
+# unlike this bot token, a human's own session is allowed to use). That
+# file disappears again on its own once the update's been applied.
 #
 # On by default: uses GitHub's built-in token, needs no setup — *unless*
 # this repo still has the GitHub default of disallowing Actions to open
@@ -59,9 +70,6 @@ jobs:
           set -euo pipefail
           KIT_PATHS=(
             ".claude"
-            ".github/workflows/backup-snapshot.yml"
-            ".github/workflows/backup-mirror.yml"
-            ".github/workflows/template-sync.yml"
             ".gitignore"
             "BACKUP.md"
             "vault-mcp"
@@ -76,15 +84,59 @@ jobs:
             rm -rf "$p"
             cp -r "$src" "$p"
           done
+
+      - name: Flag workflow-file updates that can't be pushed directly
+        run: |
+          set -euo pipefail
+          WORKFLOW_PATHS=(
+            ".github/workflows/backup-snapshot.yml"
+            ".github/workflows/backup-mirror.yml"
+            ".github/workflows/template-sync.yml"
+          )
+          PENDING=".github/PENDING_WORKFLOW_UPDATE.md"
+          TMP_BODY=$(mktemp)
+          changed_any=false
+          for p in "${WORKFLOW_PATHS[@]}"; do
+            src=".template-upstream/$p"
+            [ -e "$src" ] || continue
+            if ! cmp -s "$src" "$p" 2>/dev/null; then
+              changed_any=true
+              {
+                echo
+                echo "---"
+                echo
+                echo "### \`$p\`"
+                echo
+                echo "Replace this file's contents with the block below (GitHub → this file → the pencil/edit icon → select all, paste, commit to a new branch or directly):"
+                echo
+                echo '```yaml'
+                cat "$src"
+                echo '```'
+              } >> "$TMP_BODY"
+            fi
+          done
+          if [ "$changed_any" = "true" ]; then
+            {
+              echo "# Pending workflow-file update"
+              echo
+              echo "GitHub blocks this repo's automated sync from pushing changes to"
+              echo "files under \`.github/workflows/\` directly (a platform restriction,"
+              echo "not a bug here) — so the file(s) below changed upstream but need to"
+              echo "be applied by hand. This file will disappear on its own once you've"
+              echo "applied the update(s) and a later sync run sees them matching."
+              cat "$TMP_BODY"
+            } > "$PENDING"
+          elif [ -f "$PENDING" ]; then
+            rm -f "$PENDING"
+          fi
+          rm -f "$TMP_BODY"
           rm -rf .template-upstream
 
       - name: Check for changes
         id: diff
         run: |
           set -euo pipefail
-          git add -A -- .claude .github/workflows/backup-snapshot.yml \
-            .github/workflows/backup-mirror.yml .github/workflows/template-sync.yml \
-            .gitignore BACKUP.md vault-mcp
+          git add -A -- .claude .gitignore BACKUP.md vault-mcp .github/PENDING_WORKFLOW_UPDATE.md
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -120,4 +172,4 @@ jobs:
           gh pr create \
             --head "$SYNC_BRANCH" \
             --title "Kit update: sync from ${UPSTREAM_REPO}" \
-            --body "Automated sync of kit-managed files (\`.claude/\`, the backup workflows, this workflow, \`.gitignore\`, \`BACKUP.md\`, \`vault-mcp/\`) from the canonical template at [${UPSTREAM_REPO}](https://github.com/${UPSTREAM_REPO}). Review the diff before merging — this never auto-merges, and your notes/vault content are never touched."
+            --body "Automated sync of kit-managed files (\`.claude/\`, \`.gitignore\`, \`BACKUP.md\`, \`vault-mcp/\`) from the canonical template at [${UPSTREAM_REPO}](https://github.com/${UPSTREAM_REPO}). Review the diff before merging — this never auto-merges, and your notes/vault content are never touched. If \`.github/PENDING_WORKFLOW_UPDATE.md\` is part of this diff, it documents a change to one of the backup/sync workflow files themselves that needs a manual copy-paste — GitHub blocks this bot from pushing workflow-file updates directly."
