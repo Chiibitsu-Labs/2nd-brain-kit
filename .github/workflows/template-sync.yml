@@ -1,12 +1,14 @@
 name: Vault template sync — pull kit updates
 
-# Periodically pulls the "kit infrastructure" files — .claude/ (skills,
-# hooks, settings), .gitignore, BACKUP.md, and the vault-mcp connector
-# code — from the canonical template repo and opens a PR here so you can
-# review before merging. Never auto-merges, and never touches anything
-# else: your notes, daily/, 00_moc/, ai-improvements/, README.md, and any
-# workflow you've added yourself are untouched — only the fixed path list
-# below is ever synced.
+# Periodically pulls the "kit infrastructure" files — .claude/settings.json,
+# the two hooks, .gitignore, BACKUP.md, and the vault-mcp connector code —
+# from the canonical template repo and opens a PR here so you can review
+# before merging. .claude/skills/improve/SKILL.md is delivered once and
+# then left alone, since its own "Customize me" section explicitly invites
+# editing it. Never auto-merges, and never touches anything else: your
+# notes, daily/, 00_moc/, ai-improvements/, README.md, any extra skill or
+# hook you've added under .claude/, and any workflow you've added yourself
+# are all untouched.
 #
 # This is how fixes like security patches reach vaults that were already
 # deployed via the button before the fix shipped, without you having to
@@ -44,7 +46,11 @@ permissions:
 env:
   UPSTREAM_REPO: Chiibitsu-Labs/2nd-brain-kit
   UPSTREAM_BRANCH: main
-  SYNC_BRANCH: template-sync
+  # Slash-namespaced and specific on purpose, not just "template-sync" —
+  # this branch is force-pushed every run, so a generic name risks
+  # colliding with (and destroying) a human-created branch of the same
+  # name in an existing vault repo.
+  SYNC_BRANCH: chiibitsu-kit/template-sync
 
 jobs:
   sync:
@@ -53,28 +59,31 @@ jobs:
       - name: Checkout this vault
         uses: actions/checkout@v4
 
-      - name: Checkout canonical template
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ env.UPSTREAM_BRANCH }}
-          path: .template-upstream
-          # Empty token forces an anonymous clone. actions/checkout
-          # otherwise defaults to this job's GITHUB_TOKEN, which is scoped
-          # to *this* repo and isn't guaranteed to authenticate reads
-          # against a different one, even a public one.
-          token: ""
+      - name: Fetch canonical template
+        run: |
+          set -euo pipefail
+          # Plain git clone, not actions/checkout: actions/checkout's
+          # `token` input is required internally even when you try to pass
+          # an empty string to force an anonymous clone — it errors with
+          # "Input required and not supplied: token" instead. A public
+          # repo needs no auth at all for a plain clone.
+          git clone --depth 1 --branch "$UPSTREAM_BRANCH" \
+            "https://github.com/${UPSTREAM_REPO}.git" .template-upstream
 
       - name: Copy kit-managed paths from upstream
         run: |
           set -euo pipefail
-          KIT_PATHS=(
-            ".claude"
+          # Pure mechanism files with no expectation a client hand-edits
+          # them — always overwritten with upstream's latest.
+          FORCE_SYNC_PATHS=(
+            ".claude/settings.json"
+            ".claude/hooks/improve-session-start.sh"
+            ".claude/hooks/improve-stop-nudge.sh"
             ".gitignore"
             "BACKUP.md"
             "vault-mcp"
           )
-          for p in "${KIT_PATHS[@]}"; do
+          for p in "${FORCE_SYNC_PATHS[@]}"; do
             src=".template-upstream/$p"
             if [ ! -e "$src" ]; then
               echo "Upstream no longer has '$p' — leaving the local copy alone (not deleting)."
@@ -83,6 +92,25 @@ jobs:
             mkdir -p "$(dirname "$p")"
             rm -rf "$p"
             cp -r "$src" "$p"
+          done
+
+          # Delivered once, then left alone forever. This file's own
+          # "Customize me" section explicitly invites the client to edit
+          # it — force-overwriting it on every sync would silently discard
+          # exactly the customization it asks for. Only copied in if
+          # missing entirely (a vault that predates this file, or it got
+          # deleted); a client's own extra skills/hooks elsewhere under
+          # .claude/ are never touched, since nothing here does a
+          # directory-wide replace anymore.
+          CREATE_ONLY_PATHS=(
+            ".claude/skills/improve/SKILL.md"
+          )
+          for p in "${CREATE_ONLY_PATHS[@]}"; do
+            src=".template-upstream/$p"
+            [ -e "$src" ] || continue
+            [ -e "$p" ] && continue
+            mkdir -p "$(dirname "$p")"
+            cp "$src" "$p"
           done
 
       - name: Flag workflow-file updates that can't be pushed directly
@@ -136,7 +164,14 @@ jobs:
         id: diff
         run: |
           set -euo pipefail
-          git add -A -- .claude .gitignore BACKUP.md vault-mcp .github/PENDING_WORKFLOW_UPDATE.md
+          git add -A -- .claude .gitignore BACKUP.md vault-mcp
+          # Separate call: on the common path where this file has never
+          # existed, `git add -A -- <path>` errors with "pathspec ... did
+          # not match any files" (exit 128) since the path matches neither
+          # a working-tree file nor a tracked deletion — which, under
+          # set -e, would kill the whole run before it could even report
+          # "no changes" or propose unrelated kit updates.
+          git add -A -- .github/PENDING_WORKFLOW_UPDATE.md 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
