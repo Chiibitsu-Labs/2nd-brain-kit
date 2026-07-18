@@ -25,7 +25,10 @@ INDEX_CONTENT=$(cat "$INDEX_FILE" 2>/dev/null)
 
 RECENT_CONTENT=""
 if [[ -d "$ENTRIES_DIR" ]]; then
-  for f in $(ls -t "$ENTRIES_DIR"/*.md 2>/dev/null | head -3); do
+  # Sort by the YYYY-MM-DD-prefixed filename, not mtime — a fresh clone or
+  # checkout doesn't preserve original write times, so `ls -t` can surface
+  # arbitrary files instead of the most recently dated notes.
+  for f in $(ls "$ENTRIES_DIR"/*.md 2>/dev/null | sort -r | head -3); do
     RECENT_CONTENT+=$'\n\n---\n\n'
     RECENT_CONTENT+=$(cat "$f")
   done
