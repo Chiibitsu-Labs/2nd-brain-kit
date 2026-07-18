@@ -1,5 +1,6 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
+import nodePath from "node:path";
 import { timingSafeEqualStrings, verifySignedToken } from "../../../lib/oauth";
 
 // This vault's GitHub repo. Required — the server refuses to run without
@@ -41,10 +42,19 @@ const PROTECTED_ROOT_FILES = new Set([
   ".gitignore",
 ]);
 
-function writeBlockReason(path: string): string | null {
-  const norm = path.replace(/\\/g, "/").replace(/^\.?\/+/, "");
-  if (!norm || norm === ".") return "path is empty";
-  if (norm.split("/").some((seg) => seg === "..")) return "path traversal is not allowed";
+function writeBlockReason(rawPath: string): string | null {
+  const posixInput = rawPath.replace(/\\/g, "/");
+  // nodePath.posix.normalize collapses *every* "." segment and resolves
+  // ".." against a preceding real segment, unlike a single-pass regex
+  // strip — a crafted path like "././.claude/x" left a leading "./"
+  // behind after only one strip, which doesn't match the ".claude/"
+  // prefix check below even though GitHub's own path resolution collapses
+  // it right back to the real protected file, bypassing the guard
+  // entirely.
+  let norm = nodePath.posix.normalize(posixInput).replace(/^\/+/, "");
+  if (norm === ".") norm = "";
+  if (!norm) return "path is empty";
+  if (norm === ".." || norm.startsWith("../")) return "path traversal is not allowed";
   if (PROTECTED_ROOT_FILES.has(norm)) return `'${norm}' is a protected config file`;
   for (const pre of PROTECTED_PREFIXES) {
     const p = pre.endsWith("/") ? pre : pre + "/";
