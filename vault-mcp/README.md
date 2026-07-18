@@ -50,7 +50,11 @@ Code session with the repo attached.
    - `VAULT_BRANCH` (optional, defaults to `main`)
    - `VAULT_PROTECTED_PREFIXES` (optional) — comma-separated path prefixes
      the connector refuses to write to, so an AI can never rewrite the
-     server's own code or CI. Defaults to `.github/,.vercel/,vault-mcp/,tools/`.
+     server's own code or CI, or overwrite auto-run hooks/plugins. Defaults
+     to `.github/,.vercel/,vault-mcp/,tools/,.claude/,.obsidian/plugins/`.
+     Setting this **replaces** the default list entirely rather than adding
+     to it — if you customize it, include whichever of the paths above
+     still apply to your layout, not just the new one(s) you want to add.
 3. Deploy. Your endpoint is `https://<your-deployment>.vercel.app/api/mcp`.
 
 `VAULT_OWNER` and `VAULT_REPO` have no defaults — the server refuses every
