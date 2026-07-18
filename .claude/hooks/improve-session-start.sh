@@ -28,7 +28,14 @@ if [[ -d "$ENTRIES_DIR" ]]; then
   # Sort by the YYYY-MM-DD-prefixed filename, not mtime — a fresh clone or
   # checkout doesn't preserve original write times, so `ls -t` can surface
   # arbitrary files instead of the most recently dated notes.
-  for f in $(ls "$ENTRIES_DIR"/*.md 2>/dev/null | sort -r | head -3); do
+  # Read into an array via `while read`, not `for f in $(...)` — unquoted
+  # command substitution word-splits on whitespace, which breaks on a
+  # common Obsidian vault path like ".../My Vault/ai-improvements/...".
+  files=()
+  while IFS= read -r f; do
+    files+=("$f")
+  done < <(ls "$ENTRIES_DIR"/*.md 2>/dev/null | sort -r | head -3)
+  for f in "${files[@]}"; do
     RECENT_CONTENT+=$'\n\n---\n\n'
     RECENT_CONTENT+=$(cat "$f")
   done
