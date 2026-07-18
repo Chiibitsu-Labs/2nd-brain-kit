@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/improve-session-start.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/improve-session-start.sh\""
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/improve-stop-nudge.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/improve-stop-nudge.sh\""
           }
         ]
       }
