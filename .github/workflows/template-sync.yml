@@ -12,8 +12,14 @@ name: Vault template sync — pull kit updates
 # deployed via the button before the fix shipped, without you having to
 # notice, ask, or manually copy files over.
 #
-# On by default: uses GitHub's built-in token, needs no setup. Part of the
-# Second Brain Kit by Chiibitsu Labs.
+# On by default: uses GitHub's built-in token, needs no setup — *unless*
+# this repo still has the GitHub default of disallowing Actions to open
+# PRs. If a run pushes the sync branch but fails at "gh pr create" with a
+# permissions error, go to repo → Settings → Actions → General → Workflow
+# permissions → check "Allow GitHub Actions to create and approve pull
+# requests" → Save, then re-run. One-time, per repo.
+#
+# Part of the Second Brain Kit by Chiibitsu Labs.
 
 on:
   schedule:
@@ -93,7 +99,13 @@ jobs:
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -m "Sync kit updates from ${UPSTREAM_REPO}"
           git checkout -B "$SYNC_BRANCH"
-          git push --force-with-lease origin "$SYNC_BRANCH"
+          # Plain --force, not --force-with-lease: this checkout never
+          # fetched origin/SYNC_BRANCH, so with no local tracking ref
+          # --force-with-lease treats the branch as expected-absent and
+          # rejects the push once a previous run has already created it.
+          # This branch is exclusively managed by this workflow, so there's
+          # no concurrent human work a lease would protect against anyway.
+          git push --force origin "$SYNC_BRANCH"
 
       - name: Open pull request if one isn't already open
         if: steps.diff.outputs.changed == 'true'
