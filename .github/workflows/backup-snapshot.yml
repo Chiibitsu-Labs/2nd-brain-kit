@@ -1,0 +1,44 @@
+name: Vault backup — dated snapshot
+
+# Weekly "bookmark" of your whole vault as a dated tag (e.g. backup/2026-W29).
+# Your notes already keep full history — every AI write is a commit you can
+# undo — so this just gives you clean, named restore points you can jump to
+# or download as a ZIP from the GitHub Releases/Tags page.
+#
+# On by default: uses GitHub's built-in token, needs no setup. Part of the
+# Second Brain Kit by Chiibitsu Labs.
+#
+# If your connector writes to a branch other than the repo default (you set
+# a VAULT_BRANCH env var on the vault-mcp deployment), set a repository
+# variable of the same name (Settings → Secrets and variables → Actions →
+# Variables → New repository variable → VAULT_BRANCH) so the snapshot tags
+# the branch your notes actually land on, not whatever the repo's default
+# branch happens to be.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1" # every Monday ~05:17 UTC
+  workflow_dispatch: {} # or run it by hand from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ vars.VAULT_BRANCH || '' }}
+          fetch-depth: 0
+      - name: Create dated backup tag
+        run: |
+          set -euo pipefail
+          TAG="backup/$(date -u +%Y-W%V)"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — nothing to do."
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Created restore point: $TAG"

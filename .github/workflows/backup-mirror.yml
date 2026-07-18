@@ -1,0 +1,57 @@
+name: Vault backup — mirror to a second host
+
+# Pushes a full copy of your vault to a SECOND git host (GitLab, Codeberg,
+# Bitbucket, another GitHub account…) so there's a live backup completely
+# off GitHub. True "two independent places" redundancy.
+#
+# OPT-IN: does nothing until you add a repository secret named
+# BACKUP_MIRROR_URL. Format (include a token so it can push):
+#   https://oauth2:YOUR_TOKEN@gitlab.com/you/vault-backup.git
+# Add it at: repo → Settings → Secrets and variables → Actions → New secret.
+#
+# Part of the Second Brain Kit by Chiibitsu Labs.
+
+on:
+  push:
+    branches: ["**"]
+  schedule:
+    - cron: "37 5 * * *" # daily ~05:37 UTC
+  workflow_dispatch: {}
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check whether a mirror target is configured
+        id: check
+        env:
+          MIRROR_URL: ${{ secrets.BACKUP_MIRROR_URL }}
+        run: |
+          if [ -z "${MIRROR_URL}" ]; then
+            echo "BACKUP_MIRROR_URL is not set — off-site mirror is disabled. Skipping."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Mirror every branch and tag to the second host
+        if: steps.check.outputs.enabled == 'true'
+        env:
+          MIRROR_URL: ${{ secrets.BACKUP_MIRROR_URL }}
+          SRC: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          # A true mirror clone keeps refs as refs/heads/* and refs/tags/*,
+          # so the second host becomes a proper full-branch backup — a
+          # plain checkout + "push --mirror" would push refs/remotes/* and
+          # produce a lopsided copy.
+          git clone --mirror "$SRC" repo.git
+          # git clone/push --mirror only moves Git objects — Git LFS keeps
+          # large-file content in a separate store (Git only holds pointer
+          # files), so a vault with any LFS-tracked attachments needs its
+          # LFS objects fetched and pushed explicitly, or the "full off-site
+          # mirror" would silently exclude them. --all on both sides covers
+          # every ref, not just the current branch; a no-op if this vault
+          # doesn't use LFS.
+          git -C repo.git lfs fetch --all origin
+          git -C repo.git push --mirror "$MIRROR_URL"
+          git -C repo.git lfs push --all "$MIRROR_URL"
