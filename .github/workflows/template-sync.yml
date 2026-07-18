@@ -1,0 +1,111 @@
+name: Vault template sync — pull kit updates
+
+# Periodically pulls the "kit infrastructure" files — .claude/ (skills,
+# hooks, settings), the backup workflows, this file itself, .gitignore,
+# BACKUP.md, and the vault-mcp connector code — from the canonical
+# template repo and opens a PR here so you can review before merging.
+# Never auto-merges, and never touches anything else: your notes, daily/,
+# 00_moc/, ai-improvements/, README.md, and any workflow you've added
+# yourself are untouched — only the fixed path list below is ever synced.
+#
+# This is how fixes like security patches reach vaults that were already
+# deployed via the button before the fix shipped, without you having to
+# notice, ask, or manually copy files over.
+#
+# On by default: uses GitHub's built-in token, needs no setup. Part of the
+# Second Brain Kit by Chiibitsu Labs.
+
+on:
+  schedule:
+    - cron: "23 6 * * 3" # weekly, Wednesdays ~06:23 UTC
+  workflow_dispatch: {} # or run it by hand from the Actions tab
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REPO: Chiibitsu-Labs/2nd-brain-kit
+  UPSTREAM_BRANCH: main
+  SYNC_BRANCH: template-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this vault
+        uses: actions/checkout@v4
+
+      - name: Checkout canonical template
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ env.UPSTREAM_BRANCH }}
+          path: .template-upstream
+          # Empty token forces an anonymous clone. actions/checkout
+          # otherwise defaults to this job's GITHUB_TOKEN, which is scoped
+          # to *this* repo and isn't guaranteed to authenticate reads
+          # against a different one, even a public one.
+          token: ""
+
+      - name: Copy kit-managed paths from upstream
+        run: |
+          set -euo pipefail
+          KIT_PATHS=(
+            ".claude"
+            ".github/workflows/backup-snapshot.yml"
+            ".github/workflows/backup-mirror.yml"
+            ".github/workflows/template-sync.yml"
+            ".gitignore"
+            "BACKUP.md"
+            "vault-mcp"
+          )
+          for p in "${KIT_PATHS[@]}"; do
+            src=".template-upstream/$p"
+            if [ ! -e "$src" ]; then
+              echo "Upstream no longer has '$p' — leaving the local copy alone (not deleting)."
+              continue
+            fi
+            mkdir -p "$(dirname "$p")"
+            rm -rf "$p"
+            cp -r "$src" "$p"
+          done
+          rm -rf .template-upstream
+
+      - name: Check for changes
+        id: diff
+        run: |
+          set -euo pipefail
+          git add -A -- .claude .github/workflows/backup-snapshot.yml \
+            .github/workflows/backup-mirror.yml .github/workflows/template-sync.yml \
+            .gitignore BACKUP.md vault-mcp
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push sync branch
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Sync kit updates from ${UPSTREAM_REPO}"
+          git checkout -B "$SYNC_BRANCH"
+          git push --force-with-lease origin "$SYNC_BRANCH"
+
+      - name: Open pull request if one isn't already open
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '. | length' | grep -qv '^0$'; then
+            echo "A sync PR is already open on '$SYNC_BRANCH' — it now reflects this run's diff. Nothing further to do."
+            exit 0
+          fi
+          gh pr create \
+            --head "$SYNC_BRANCH" \
+            --title "Kit update: sync from ${UPSTREAM_REPO}" \
+            --body "Automated sync of kit-managed files (\`.claude/\`, the backup workflows, this workflow, \`.gitignore\`, \`BACKUP.md\`, \`vault-mcp/\`) from the canonical template at [${UPSTREAM_REPO}](https://github.com/${UPSTREAM_REPO}). Review the diff before merging — this never auto-merges, and your notes/vault content are never touched."

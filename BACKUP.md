@@ -74,5 +74,15 @@ computer already holds a full copy. If you also did the NotebookLM step
 (Google Drive for desktop mirroring your vault folder), that's a third
 live copy. Redundancy adds up quietly.
 
+## Staying up to date — `template-sync.yml` (on by default)
+
+Weekly, this checks the canonical Second Brain Kit template for updates —
+security fixes, bug fixes, skill/hook improvements — and opens a pull
+request here with just the kit-managed files (`.claude/`, the two backup
+workflows above, this workflow itself, `.gitignore`, `BACKUP.md`,
+`vault-mcp/`). It never auto-merges and never touches your notes or
+anything else in the repo — review the diff and merge when you're ready,
+or close it if you'd rather skip that particular update.
+
 ---
 *Second Brain Kit by **Chiibitsu Labs** — chiibitsu.com · labs@chiibitsu.com*
