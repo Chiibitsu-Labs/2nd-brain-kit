@@ -18,11 +18,16 @@ function vaultConfigured(): boolean {
 // deployment footprint — server code, CI, or deploy config. A note never
 // lives there, and allowing it would let an injected or mistaken tool call
 // rewrite the running server and trigger a redeploy, far beyond the
-// "one notes repo" blast radius. Override the defaults with a
-// comma-separated VAULT_PROTECTED_PREFIXES if your layout differs.
+// "one notes repo" blast radius. This also covers paths that get executed
+// or loaded locally rather than by this server: `.claude/` holds hooks
+// Claude Code auto-runs on session start/stop, and `.obsidian/plugins/`
+// holds JS Obsidian loads on open — a write to either turns ordinary note
+// access into local code execution the next time the vault is opened.
+// Override the defaults with a comma-separated VAULT_PROTECTED_PREFIXES if
+// your layout differs.
 const PROTECTED_PREFIXES = (process.env.VAULT_PROTECTED_PREFIXES
   ? process.env.VAULT_PROTECTED_PREFIXES.split(",")
-  : [".github/", ".vercel/", "vault-mcp/", "tools/"]
+  : [".github/", ".vercel/", "vault-mcp/", "tools/", ".claude/", ".obsidian/plugins/"]
 )
   .map((s) => s.trim())
   .filter(Boolean);
@@ -44,7 +49,7 @@ function writeBlockReason(path: string): string | null {
   for (const pre of PROTECTED_PREFIXES) {
     const p = pre.endsWith("/") ? pre : pre + "/";
     if (norm === p.slice(0, -1) || norm.startsWith(p)) {
-      return `'${pre}' is protected (server code / CI / deploy config); this connector only manages notes`;
+      return `'${pre}' is protected (server code, CI/deploy config, or an auto-run script/plugin path); this connector only manages notes`;
     }
   }
   return null;
