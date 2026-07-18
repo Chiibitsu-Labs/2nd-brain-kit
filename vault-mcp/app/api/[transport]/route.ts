@@ -24,12 +24,25 @@ function vaultConfigured(): boolean {
 // Claude Code auto-runs on session start/stop, and `.obsidian/plugins/`
 // holds JS Obsidian loads on open — a write to either turns ordinary note
 // access into local code execution the next time the vault is opened.
-// Override the defaults with a comma-separated VAULT_PROTECTED_PREFIXES if
-// your layout differs.
-const PROTECTED_PREFIXES = (process.env.VAULT_PROTECTED_PREFIXES
+//
+// These are mandatory, not configurable defaults — there's no legitimate
+// layout where an AI connector should be able to write executable code
+// paths, so VAULT_PROTECTED_PREFIXES only ever *adds* extra prefixes on
+// top of this list, never removes from it. (An earlier version let the
+// env var fully replace the list, which meant any custom override
+// silently reopened these exact paths.)
+const MANDATORY_PROTECTED_PREFIXES = [
+  ".github/",
+  ".vercel/",
+  "vault-mcp/",
+  "tools/",
+  ".claude/",
+  ".obsidian/plugins/",
+];
+const EXTRA_PROTECTED_PREFIXES = process.env.VAULT_PROTECTED_PREFIXES
   ? process.env.VAULT_PROTECTED_PREFIXES.split(",")
-  : [".github/", ".vercel/", "vault-mcp/", "tools/", ".claude/", ".obsidian/plugins/"]
-)
+  : [];
+const PROTECTED_PREFIXES = [...MANDATORY_PROTECTED_PREFIXES, ...EXTRA_PROTECTED_PREFIXES]
   .map((s) => s.trim())
   .filter(Boolean);
 const PROTECTED_ROOT_FILES = new Set([
