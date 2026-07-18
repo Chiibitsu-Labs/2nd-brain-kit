@@ -68,10 +68,19 @@ function writeBlockReason(rawPath: string): string | null {
   if (norm === ".") norm = "";
   if (!norm) return "path is empty";
   if (norm === ".." || norm.startsWith("../")) return "path traversal is not allowed";
-  if (PROTECTED_ROOT_FILES.has(norm)) return `'${norm}' is a protected config file`;
+  // Case-fold only for the protection checks below, never for the actual
+  // write (callers keep using the original-case `path`/`norm`-adjacent
+  // value elsewhere). GitHub's own repo storage is case-sensitive, but a
+  // checkout onto a case-insensitive filesystem (macOS/Windows default)
+  // can alias ".CLAUDE/..." onto the real ".claude/..." on disk — a
+  // case-sensitive comparison here could be bypassed by writing an
+  // upper/mixed-case variant of a protected path that still lands on (or
+  // collides with) the real file once a human checks the repo out.
+  const normLower = norm.toLowerCase();
+  if (PROTECTED_ROOT_FILES.has(normLower)) return `'${norm}' is a protected config file`;
   for (const pre of PROTECTED_PREFIXES) {
-    const p = pre.endsWith("/") ? pre : pre + "/";
-    if (norm === p.slice(0, -1) || norm.startsWith(p)) {
+    const p = (pre.endsWith("/") ? pre : pre + "/").toLowerCase();
+    if (normLower === p.slice(0, -1) || normLower.startsWith(p)) {
       return `'${pre}' is protected (server code, CI/deploy config, or an auto-run script/plugin path); this connector only manages notes`;
     }
   }
