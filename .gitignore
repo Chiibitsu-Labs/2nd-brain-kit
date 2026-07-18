@@ -17,6 +17,9 @@ node_modules
 # Obsidian's own trash folder (deleted notes) — recoverable locally, no need to sync
 .trash/
 
+# --- Local hook state (per-device, not vault content) ---
+.claude/.improve-nudge-last
+
 # --- OS / editor junk ---
 .DS_Store
 ._*
