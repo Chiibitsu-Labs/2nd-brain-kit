@@ -367,6 +367,12 @@ async function diagnoseVaultFailure(
         `https://api.github.com/repos/${OWNER}/${REPO}/branches?per_page=1`,
         { headers: ghHeaders() }
       );
+      // A throttled probe is not evidence about branches. Without this, a
+      // 429 (or a rate-limited 403) just leaves listRes.ok false and falls
+      // through to the ambiguous diagnosis below — handing the owner a
+      // token/branch-name/deletion/empty-repo menu for what is really a
+      // wait-and-retry. Every other probe here checks this; this one didn't.
+      if (await isRateLimited(listRes)) return { message: rateLimitedMessage(listRes) };
       if (listRes.ok) {
         const branches = (await listRes.json()) as unknown[];
         listChecked = Array.isArray(branches);
@@ -375,13 +381,24 @@ async function diagnoseVaultFailure(
         // GitHub hiding a private resource; that branch really is absent, and
         // offering "fix your token" would send the owner to change a setting
         // this very response just demonstrated is fine.
+        //
+        // Only for reads, though. This probe is a GET, so it clears read
+        // access and nothing else — telling someone mid-save that "your
+        // permissions are not the problem" would be the same over-claim
+        // the empty-repo case had to fix.
         if (Array.isArray(branches) && branches.length > 0) {
           return {
             message:
-              `Vault unreachable: ${OWNER}/${REPO} has branches, but "${BRANCH}" is not one of them. This token can read the branch list, so its permissions are not the problem — the configured branch simply isn't there. Two ways that happens:\n` +
+              `Vault unreachable: ${OWNER}/${REPO} has branches, but "${BRANCH}" is not one of them. This token can read the branch list, so ${
+                operation === "write" ? "it can at least reach the repo" : "its permissions are not the problem"
+              } — the configured branch simply isn't there. Two ways that happens:\n` +
               `1. VAULT_BRANCH points at a name that never existed — check it in your Vercel environment settings (leave it unset to use "main"), then redeploy.\n` +
               `2. The branch was deleted. Its commits usually still exist: on GitHub open the repo → Insights → Network, or restore from a recent backup (BACKUP.md), and recreate the branch before pointing the connector back at it.\n\n` +
-              `The repo's branch list on GitHub tells you which name to use. Check Insights → Network for commits under "${BRANCH}" before repointing, so you don't walk away from history that's still recoverable. ${NOT_DATA_LOSS}`,
+              `The repo's branch list on GitHub tells you which name to use. Check Insights → Network for commits under "${BRANCH}" before repointing, so you don't walk away from history that's still recoverable.` +
+              (operation === "write"
+                ? ` One caveat for saving: every check here was a read, so none of it confirms the connector can write. If saving still fails once the branch is back, the token needs Contents: "Read and write" and the account behind it needs Write access to the repo.`
+                : "") +
+              ` ${NOT_DATA_LOSS}`,
           };
         }
         if (Array.isArray(branches) && branches.length === 0) {
@@ -429,7 +446,14 @@ async function diagnoseVaultFailure(
 // credentials story rather than an empty or "not found" result.
 class VaultUnreachable extends Error {}
 
-async function ghGetPath(path: string) {
+// `operation` is what the caller is ultimately trying to do, not what this
+// function does — every probe in here is a GET regardless. write_file calls
+// this as a preflight, and without the intent flowing through, a read-only
+// token against an empty repo is told "fresh-vault state, not a fault, just
+// make a first commit" — and saving still fails afterwards, because nothing
+// checked write access. The diagnosis has a caveat for exactly that case;
+// it was simply unreachable from the one path that needs it.
+async function ghGetPath(path: string, operation: "read" | "write" = "read") {
   const cleanPath = path === "." ? "" : path;
   // encodeURIComponent on the ref, not raw interpolation: a branch name may
   // legally contain "&" or "#", which would otherwise truncate the query and
@@ -439,13 +463,13 @@ async function ghGetPath(path: string) {
   const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodePath(cleanPath)}?ref=${encodeURIComponent(BRANCH)}`;
   const res = await fetch(url, { headers: ghHeaders() });
   if (res.status === 404) {
-    const problem = await diagnoseVaultFailure(404);
+    const problem = await diagnoseVaultFailure(404, operation);
     if (problem) throw new VaultUnreachable(problem.message);
     return null; // repo and branch both fine, so this path genuinely doesn't exist
   }
   if (res.status === 401 || res.status === 403 || res.status === 429) {
     if (await isRateLimited(res)) throw new VaultUnreachable(rateLimitedMessage(res));
-    const problem = await diagnoseVaultFailure(res.status);
+    const problem = await diagnoseVaultFailure(res.status, operation);
     throw new VaultUnreachable(
       problem?.message ??
         `Vault unreachable: GitHub refused the request (${res.status}). ${NOT_EVIDENCE}`
@@ -539,7 +563,7 @@ const rawHandler = createMcpHandler(
               isError: true,
             };
           }
-          const existing = await ghGetPath(path);
+          const existing = await ghGetPath(path, "write");
           const body: Record<string, unknown> = {
             message,
             content: Buffer.from(content, "utf-8").toString("base64"),
