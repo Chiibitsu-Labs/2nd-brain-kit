@@ -130,6 +130,13 @@ type VaultAuthProblem = { message: string };
 const NOT_EVIDENCE =
   "This is a connection or credentials failure — it says nothing either way about what's in your vault, so don't read it as data loss.";
 
+// For failures that are definitely NOT credentials-related (a repository rule
+// refused the write, say). Appending the credentials wording there would
+// contradict the diagnosis in the same breath and push the owner back toward
+// rotating a token that was never the problem.
+const NOT_DATA_LOSS =
+  "This says nothing about what's in your vault either way, so don't read it as data loss.";
+
 const TOKEN_FIX =
   `Check VAULT_GITHUB_TOKEN in your Vercel project's environment settings: it may have expired, been revoked, ` +
   `or been created under a different GitHub account than the one that owns ${OWNER}/${REPO}. ` +
@@ -224,9 +231,10 @@ async function diagnoseVaultFailure(
     return {
       message:
         `Write refused by a repository rule, not by the token: GitHub said "${preReason.slice(0, 400)}". ` +
-        `A branch protection rule or ruleset on "${BRANCH}" is blocking this commit, so changing the token's permissions won't help. ` +
-        `Either relax the rule for this branch (GitHub → the repo → Settings → Branches / Rules), or point VAULT_BRANCH at a branch the rule doesn't cover. ` +
-        `${NOT_EVIDENCE}`,
+        `Changing the token's permissions won't help — go to the rule GitHub named, at GitHub → the repo → Settings → Rules (and Settings → Branches for classic protection). ` +
+        `If that rule targets the "${BRANCH}" branch specifically, relaxing it or pointing VAULT_BRANCH at an uncovered branch both work. ` +
+        `If it's a repository-wide push rule — restricted file paths, extensions, file size, commit metadata — switching branches will not help and the rule itself has to change. ` +
+        `${NOT_DATA_LOSS}`,
     };
   }
 
@@ -322,8 +330,8 @@ async function diagnoseVaultFailure(
       message:
         `Vault unreachable: the token can see ${OWNER}/${REPO} but GitHub refused to read or write its files (${originalStatus}). ` +
         `${NOT_EVIDENCE} This looks like a token *permission* problem. ` +
-        `In GitHub → Settings → Developer settings → Fine-grained tokens, open this token and set Repository permissions → Contents to "Read and write" for ${OWNER}/${REPO}. ` +
-        `Save, then redeploy in Vercel if you regenerated the token.` +
+        `Two things have to be true, and this server can't tell which one is missing. First, the token itself: GitHub → Settings → Developer settings → Fine-grained tokens, open this token and set Repository permissions → Contents to "Read and write" for ${OWNER}/${REPO}, then redeploy in Vercel if you regenerated it. ` +
+        `Second, the account that owns the token: a token can never grant more access than its owner has, so if that account is a collaborator with the Read role, no token setting will let it write — check the repo's Settings → Collaborators and give it Write.` +
         (reason ? ` GitHub's own explanation was: "${reason.slice(0, 400)}" — if that points somewhere else, believe it over this guess.` : ""),
     };
   }
@@ -352,6 +360,8 @@ async function diagnoseVaultFailure(
     // so contents and branch both 404 for a completely benign reason. Saying
     // "fix your token" or "recover the deleted branch" there sends someone
     // chasing a problem that doesn't exist — the vault just hasn't started.
+    let listChecked = false;
+    let listInconclusive = false;
     try {
       const listRes = await fetch(
         `https://api.github.com/repos/${OWNER}/${REPO}/branches?per_page=1`,
@@ -359,25 +369,37 @@ async function diagnoseVaultFailure(
       );
       if (listRes.ok) {
         const branches = (await listRes.json()) as unknown[];
+        listChecked = Array.isArray(branches);
         if (Array.isArray(branches) && branches.length === 0) {
           return {
             message:
-              `The vault repository ${OWNER}/${REPO} exists but is empty — it has no commits yet, so there is no "${BRANCH}" branch and no notes to read. Nothing is wrong with your token or your setup. ` +
-              `Give it a first commit and the connector will work: on GitHub open the repo and use "creating a new file" (a README is fine) with "${BRANCH}" as the branch, or push an existing vault to it. Then try again.`,
+              `The vault repository ${OWNER}/${REPO} exists but is empty — it has no commits yet, so there is no "${BRANCH}" branch and nothing to read. This is a fresh-vault state, not a fault. ` +
+              `Give it a first commit: on GitHub open the repo and use "creating a new file" (a README is fine) with "${BRANCH}" as the branch, or push an existing vault to it. Then try again.` +
+              (operation === "write"
+                ? ` One caveat for saving: everything checked here was a read, so this doesn't confirm the connector can write. If commits still fail after the first one exists, the token needs Contents: "Read and write" and the account behind it needs Write access to the repo.`
+                : ""),
           };
         }
       }
     } catch {
-      // Couldn't list branches — fall through to the ambiguous diagnosis,
-      // which is still better than silence.
+      // Couldn't list branches — fall through, but the ambiguous diagnosis
+      // below must keep the empty-repo possibility, or a transient failure of
+      // this probe restores the exact first-run misdiagnosis it was added to
+      // prevent.
+      listInconclusive = true;
     }
+    if (!listChecked) listInconclusive = true;
     return {
       message:
-        `Vault unreachable: GitHub returns "not found" for the branch "${BRANCH}" of ${OWNER}/${REPO}. Seeing the repo doesn't prove this token may read its branches — a fine-grained token gets Metadata access automatically but needs Contents access for this — so there are three possibilities:\n` +
+        `Vault unreachable: GitHub returns "not found" for the branch "${BRANCH}" of ${OWNER}/${REPO}. Seeing the repo doesn't prove this token may read its branches — a fine-grained token gets Metadata access automatically but needs Contents access for this — so several things could be true:\n` +
         `1. The token lacks Contents access, and GitHub is hiding the branch behind the same "not found" it uses for private resources. In GitHub → Settings → Developer settings → Fine-grained tokens, set Repository permissions → Contents to "Read and write" for ${OWNER}/${REPO}.\n` +
         `2. VAULT_BRANCH points at a name that doesn't exist — check it in your Vercel environment settings (leave it unset to use "main"), then redeploy.\n` +
-        `3. That branch was deleted. The commits usually still exist: on GitHub open the repo → Insights → Network, or restore from a recent backup (BACKUP.md). Recreate the branch before pointing the connector back at it.\n\n` +
-        `Open the repo's branch list on GitHub in a browser, signed in as the owner. If "${BRANCH}" is listed, the branch exists and this connector simply cannot see it — case 1, a permission problem. (That says nothing about any particular note; it only rules out a missing branch.) If "${BRANCH}" is absent, you are in case 2 or 3, and the list alone cannot tell those apart: a name that was never right and a branch someone deleted look identical from outside. Before repointing VAULT_BRANCH at another branch, check the repo → Insights → Network for commits on a branch by that name, so you do not walk away from history that is still recoverable.`,
+        `3. That branch was deleted. The commits usually still exist: on GitHub open the repo → Insights → Network, or restore from a recent backup (BACKUP.md). Recreate the branch before pointing the connector back at it.\n` +
+        (listInconclusive
+          ? `4. The repository is brand new and has no commits at all, so it has no branches yet — this check couldn't be completed, so that possibility stays open. If the repo is empty, just make a first commit on "${BRANCH}".\n`
+          : "") +
+        `\n` +
+        `Open the repo's branch list on GitHub in a browser, signed in as the owner. If "${BRANCH}" is listed, the branch exists and this connector simply cannot see it — case 1, a permission problem. (That says nothing about any particular note; it only rules out a missing branch.) If "${BRANCH}" is absent — or the list is empty, which means the repo has no commits yet — the list alone cannot tell the remaining cases apart: a name that was never right and a branch someone deleted look identical from outside. Before repointing VAULT_BRANCH at another branch, check the repo → Insights → Network for commits on a branch by that name, so you do not walk away from history that is still recoverable.`,
     };
   }
   if (!branchRes.ok) {
