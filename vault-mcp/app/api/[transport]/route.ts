@@ -1,5 +1,6 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
+import nodePath from "node:path";
 import { timingSafeEqualStrings, verifySignedToken } from "../../../lib/oauth";
 
 // This vault's GitHub repo. Required — the server refuses to run without
@@ -18,12 +19,30 @@ function vaultConfigured(): boolean {
 // deployment footprint — server code, CI, or deploy config. A note never
 // lives there, and allowing it would let an injected or mistaken tool call
 // rewrite the running server and trigger a redeploy, far beyond the
-// "one notes repo" blast radius. Override the defaults with a
-// comma-separated VAULT_PROTECTED_PREFIXES if your layout differs.
-const PROTECTED_PREFIXES = (process.env.VAULT_PROTECTED_PREFIXES
+// "one notes repo" blast radius. This also covers paths that get executed
+// or loaded locally rather than by this server: `.claude/` holds hooks
+// Claude Code auto-runs on session start/stop, and `.obsidian/plugins/`
+// holds JS Obsidian loads on open — a write to either turns ordinary note
+// access into local code execution the next time the vault is opened.
+//
+// These are mandatory, not configurable defaults — there's no legitimate
+// layout where an AI connector should be able to write executable code
+// paths, so VAULT_PROTECTED_PREFIXES only ever *adds* extra prefixes on
+// top of this list, never removes from it. (An earlier version let the
+// env var fully replace the list, which meant any custom override
+// silently reopened these exact paths.)
+const MANDATORY_PROTECTED_PREFIXES = [
+  ".github/",
+  ".vercel/",
+  "vault-mcp/",
+  "tools/",
+  ".claude/",
+  ".obsidian/plugins/",
+];
+const EXTRA_PROTECTED_PREFIXES = process.env.VAULT_PROTECTED_PREFIXES
   ? process.env.VAULT_PROTECTED_PREFIXES.split(",")
-  : [".github/", ".vercel/", "vault-mcp/", "tools/"]
-)
+  : [];
+const PROTECTED_PREFIXES = [...MANDATORY_PROTECTED_PREFIXES, ...EXTRA_PROTECTED_PREFIXES]
   .map((s) => s.trim())
   .filter(Boolean);
 const PROTECTED_ROOT_FILES = new Set([
@@ -36,15 +55,33 @@ const PROTECTED_ROOT_FILES = new Set([
   ".gitignore",
 ]);
 
-function writeBlockReason(path: string): string | null {
-  const norm = path.replace(/\\/g, "/").replace(/^\.?\/+/, "");
-  if (!norm || norm === ".") return "path is empty";
-  if (norm.split("/").some((seg) => seg === "..")) return "path traversal is not allowed";
-  if (PROTECTED_ROOT_FILES.has(norm)) return `'${norm}' is a protected config file`;
+function writeBlockReason(rawPath: string): string | null {
+  const posixInput = rawPath.replace(/\\/g, "/");
+  // nodePath.posix.normalize collapses *every* "." segment and resolves
+  // ".." against a preceding real segment, unlike a single-pass regex
+  // strip — a crafted path like "././.claude/x" left a leading "./"
+  // behind after only one strip, which doesn't match the ".claude/"
+  // prefix check below even though GitHub's own path resolution collapses
+  // it right back to the real protected file, bypassing the guard
+  // entirely.
+  let norm = nodePath.posix.normalize(posixInput).replace(/^\/+/, "");
+  if (norm === ".") norm = "";
+  if (!norm) return "path is empty";
+  if (norm === ".." || norm.startsWith("../")) return "path traversal is not allowed";
+  // Case-fold only for the protection checks below, never for the actual
+  // write (callers keep using the original-case `path`/`norm`-adjacent
+  // value elsewhere). GitHub's own repo storage is case-sensitive, but a
+  // checkout onto a case-insensitive filesystem (macOS/Windows default)
+  // can alias ".CLAUDE/..." onto the real ".claude/..." on disk — a
+  // case-sensitive comparison here could be bypassed by writing an
+  // upper/mixed-case variant of a protected path that still lands on (or
+  // collides with) the real file once a human checks the repo out.
+  const normLower = norm.toLowerCase();
+  if (PROTECTED_ROOT_FILES.has(normLower)) return `'${norm}' is a protected config file`;
   for (const pre of PROTECTED_PREFIXES) {
-    const p = pre.endsWith("/") ? pre : pre + "/";
-    if (norm === p.slice(0, -1) || norm.startsWith(p)) {
-      return `'${pre}' is protected (server code / CI / deploy config); this connector only manages notes`;
+    const p = (pre.endsWith("/") ? pre : pre + "/").toLowerCase();
+    if (normLower === p.slice(0, -1) || normLower.startsWith(p)) {
+      return `'${pre}' is protected (server code, CI/deploy config, or an auto-run script/plugin path); this connector only manages notes`;
     }
   }
   return null;

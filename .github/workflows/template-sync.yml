@@ -1,0 +1,210 @@
+name: Vault template sync — pull kit updates
+
+# Periodically pulls the "kit infrastructure" files — .claude/settings.json,
+# the two hooks, .gitignore, BACKUP.md, and the vault-mcp connector code —
+# from the canonical template repo and opens a PR here so you can review
+# before merging. .claude/skills/improve/SKILL.md is delivered once and
+# then left alone, since its own "Customize me" section explicitly invites
+# editing it. Never auto-merges, and never touches anything else: your
+# notes, daily/, 00_moc/, ai-improvements/, README.md, any extra skill or
+# hook you've added under .claude/, and any workflow you've added yourself
+# are all untouched.
+#
+# This is how fixes like security patches reach vaults that were already
+# deployed via the button before the fix shipped, without you having to
+# notice, ask, or manually copy files over.
+#
+# Workflow files (backup-snapshot.yml, backup-mirror.yml, this file) are
+# handled differently: GitHub hard-blocks the automatic token every
+# Actions job gets from creating or updating anything under
+# .github/workflows/ — no permissions setting fixes this, it's a
+# platform-level anti-privilege-escalation rule. So when one of those 3
+# files changes upstream, this workflow can't apply it directly; instead
+# it writes/updates .github/PENDING_WORKFLOW_UPDATE.md with the new
+# content and instructions to paste it in via GitHub's web editor (which,
+# unlike this bot token, a human's own session is allowed to use). That
+# file disappears again on its own once the update's been applied.
+#
+# On by default: uses GitHub's built-in token, needs no setup — *unless*
+# this repo still has the GitHub default of disallowing Actions to open
+# PRs. If a run pushes the sync branch but fails at "gh pr create" with a
+# permissions error, go to repo → Settings → Actions → General → Workflow
+# permissions → check "Allow GitHub Actions to create and approve pull
+# requests" → Save, then re-run. One-time, per repo.
+#
+# Part of the Second Brain Kit by Chiibitsu Labs.
+
+on:
+  schedule:
+    - cron: "23 6 * * 3" # weekly, Wednesdays ~06:23 UTC
+  workflow_dispatch: {} # or run it by hand from the Actions tab
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REPO: Chiibitsu-Labs/2nd-brain-kit
+  UPSTREAM_BRANCH: main
+  # Slash-namespaced and specific on purpose, not just "template-sync" —
+  # this branch is force-pushed every run, so a generic name risks
+  # colliding with (and destroying) a human-created branch of the same
+  # name in an existing vault repo.
+  SYNC_BRANCH: chiibitsu-kit/template-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this vault
+        uses: actions/checkout@v4
+
+      - name: Fetch canonical template
+        run: |
+          set -euo pipefail
+          # Plain git clone, not actions/checkout: actions/checkout's
+          # `token` input is required internally even when you try to pass
+          # an empty string to force an anonymous clone — it errors with
+          # "Input required and not supplied: token" instead. A public
+          # repo needs no auth at all for a plain clone.
+          git clone --depth 1 --branch "$UPSTREAM_BRANCH" \
+            "https://github.com/${UPSTREAM_REPO}.git" .template-upstream
+
+      - name: Copy kit-managed paths from upstream
+        run: |
+          set -euo pipefail
+          # Pure mechanism files with no expectation a client hand-edits
+          # them — always overwritten with upstream's latest.
+          FORCE_SYNC_PATHS=(
+            ".claude/settings.json"
+            ".claude/hooks/improve-session-start.sh"
+            ".claude/hooks/improve-stop-nudge.sh"
+            ".gitignore"
+            "BACKUP.md"
+            "vault-mcp"
+          )
+          for p in "${FORCE_SYNC_PATHS[@]}"; do
+            src=".template-upstream/$p"
+            if [ ! -e "$src" ]; then
+              echo "Upstream no longer has '$p' — leaving the local copy alone (not deleting)."
+              continue
+            fi
+            mkdir -p "$(dirname "$p")"
+            rm -rf "$p"
+            cp -r "$src" "$p"
+          done
+
+          # Delivered once, then left alone forever. This file's own
+          # "Customize me" section explicitly invites the client to edit
+          # it — force-overwriting it on every sync would silently discard
+          # exactly the customization it asks for. Only copied in if
+          # missing entirely (a vault that predates this file, or it got
+          # deleted); a client's own extra skills/hooks elsewhere under
+          # .claude/ are never touched, since nothing here does a
+          # directory-wide replace anymore.
+          CREATE_ONLY_PATHS=(
+            ".claude/skills/improve/SKILL.md"
+          )
+          for p in "${CREATE_ONLY_PATHS[@]}"; do
+            src=".template-upstream/$p"
+            [ -e "$src" ] || continue
+            [ -e "$p" ] && continue
+            mkdir -p "$(dirname "$p")"
+            cp "$src" "$p"
+          done
+
+      - name: Flag workflow-file updates that can't be pushed directly
+        run: |
+          set -euo pipefail
+          WORKFLOW_PATHS=(
+            ".github/workflows/backup-snapshot.yml"
+            ".github/workflows/backup-mirror.yml"
+            ".github/workflows/template-sync.yml"
+          )
+          PENDING=".github/PENDING_WORKFLOW_UPDATE.md"
+          TMP_BODY=$(mktemp)
+          changed_any=false
+          for p in "${WORKFLOW_PATHS[@]}"; do
+            src=".template-upstream/$p"
+            [ -e "$src" ] || continue
+            if ! cmp -s "$src" "$p" 2>/dev/null; then
+              changed_any=true
+              {
+                echo
+                echo "---"
+                echo
+                echo "### \`$p\`"
+                echo
+                echo "Replace this file's contents with the block below (GitHub → this file → the pencil/edit icon → select all, paste, commit to a new branch or directly):"
+                echo
+                echo '```yaml'
+                cat "$src"
+                echo '```'
+              } >> "$TMP_BODY"
+            fi
+          done
+          if [ "$changed_any" = "true" ]; then
+            {
+              echo "# Pending workflow-file update"
+              echo
+              echo "GitHub blocks this repo's automated sync from pushing changes to"
+              echo "files under \`.github/workflows/\` directly (a platform restriction,"
+              echo "not a bug here) — so the file(s) below changed upstream but need to"
+              echo "be applied by hand. This file will disappear on its own once you've"
+              echo "applied the update(s) and a later sync run sees them matching."
+              cat "$TMP_BODY"
+            } > "$PENDING"
+          elif [ -f "$PENDING" ]; then
+            rm -f "$PENDING"
+          fi
+          rm -f "$TMP_BODY"
+          rm -rf .template-upstream
+
+      - name: Check for changes
+        id: diff
+        run: |
+          set -euo pipefail
+          git add -A -- .claude .gitignore BACKUP.md vault-mcp
+          # Separate call: on the common path where this file has never
+          # existed, `git add -A -- <path>` errors with "pathspec ... did
+          # not match any files" (exit 128) since the path matches neither
+          # a working-tree file nor a tracked deletion — which, under
+          # set -e, would kill the whole run before it could even report
+          # "no changes" or propose unrelated kit updates.
+          git add -A -- .github/PENDING_WORKFLOW_UPDATE.md 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push sync branch
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Sync kit updates from ${UPSTREAM_REPO}"
+          git checkout -B "$SYNC_BRANCH"
+          # Plain --force, not --force-with-lease: this checkout never
+          # fetched origin/SYNC_BRANCH, so with no local tracking ref
+          # --force-with-lease treats the branch as expected-absent and
+          # rejects the push once a previous run has already created it.
+          # This branch is exclusively managed by this workflow, so there's
+          # no concurrent human work a lease would protect against anyway.
+          git push --force origin "$SYNC_BRANCH"
+
+      - name: Open pull request if one isn't already open
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '. | length' | grep -qv '^0$'; then
+            echo "A sync PR is already open on '$SYNC_BRANCH' — it now reflects this run's diff. Nothing further to do."
+            exit 0
+          fi
+          gh pr create \
+            --head "$SYNC_BRANCH" \
+            --title "Kit update: sync from ${UPSTREAM_REPO}" \
+            --body "Automated sync of kit-managed files (\`.claude/\`, \`.gitignore\`, \`BACKUP.md\`, \`vault-mcp/\`) from the canonical template at [${UPSTREAM_REPO}](https://github.com/${UPSTREAM_REPO}). Review the diff before merging — this never auto-merges, and your notes/vault content are never touched. If \`.github/PENDING_WORKFLOW_UPDATE.md\` is part of this diff, it documents a change to one of the backup/sync workflow files themselves that needs a manual copy-paste — GitHub blocks this bot from pushing workflow-file updates directly."

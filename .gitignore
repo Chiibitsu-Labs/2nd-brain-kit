@@ -1,0 +1,27 @@
+# Vault repo ignores — Second Brain Kit by Chiibitsu Labs.
+
+# --- Connector build artifacts (from vault-mcp/, only if you build locally) ---
+node_modules
+.next
+.vercel
+*.local
+
+# --- Obsidian local state (per-device; committing it causes sync conflicts) ---
+# Keep the rest of .obsidian/ — your plugins, themes, and hotkeys SHOULD sync
+# across devices. Only these per-device / cache files are excluded.
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.obsidian/**/data.json.bak
+
+# Obsidian's own trash folder (deleted notes) — recoverable locally, no need to sync
+.trash/
+
+# --- Local hook state (per-device, not vault content) ---
+.claude/.improve-nudge-last
+
+# --- OS / editor junk ---
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
