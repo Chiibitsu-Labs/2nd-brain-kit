@@ -138,6 +138,23 @@ const TOKEN_FIX =
 
 const RATE_LIMITED = `Vault temporarily unreachable: GitHub is rate-limiting requests right now. This is throttling, not a credentials problem, so don't rotate anything — and it says nothing about your notes. Wait a few minutes and try again.`;
 
+// GitHub's primary rate limit can reset up to an hour out, so "a few minutes"
+// is advice that has an owner retrying a connector that cannot succeed yet.
+// When the reset header is present, say when; secondary limits often omit it,
+// hence the generic fallback.
+function rateLimitedMessage(res: Response): string {
+  const reset = Number(res.headers.get("x-ratelimit-reset"));
+  if (!Number.isFinite(reset) || reset <= 0) return RATE_LIMITED;
+  const resetMs = reset * 1000;
+  const minutes = Math.ceil((resetMs - Date.now()) / 60000);
+  if (minutes < 1) return RATE_LIMITED;
+  const when = new Date(resetMs).toISOString().slice(11, 16);
+  return (
+    `Vault temporarily unreachable: GitHub is rate-limiting requests right now. This is throttling, not a credentials problem, so don't rotate anything — and it says nothing about your notes. ` +
+    `The limit resets in about ${minutes} minute${minutes === 1 ? "" : "s"} (${when} UTC); retrying before then will keep failing.`
+  );
+}
+
 // GitHub signals throttling as 429, or as 403 with a rate-limit body/header.
 // Both are transient; describing either as a credentials failure would send
 // the owner off rotating a perfectly good token.
@@ -157,7 +174,8 @@ async function isRateLimited(res: Response): Promise<boolean> {
 // problem.
 async function diagnoseVaultFailure(
   originalStatus: number,
-  operation: "read" | "write" = "read"
+  operation: "read" | "write" = "read",
+  githubReason?: string
 ): Promise<VaultAuthProblem | null> {
   let repoRes: Response;
   try {
@@ -169,7 +187,7 @@ async function diagnoseVaultFailure(
   }
 
   if (!repoRes.ok) {
-    if (await isRateLimited(repoRes)) return { message: RATE_LIMITED };
+    if (await isRateLimited(repoRes)) return { message: rateLimitedMessage(repoRes) };
     if (repoRes.status === 401) {
       return { message: `Vault unreachable: GitHub rejected the access token (401). ${NOT_EVIDENCE} ${TOKEN_FIX}` };
     }
@@ -220,12 +238,29 @@ async function diagnoseVaultFailure(
           `Archiving blocks writes only — reading is unaffected, though nothing here checked what the repo currently contains. To start saving again, open the repo on GitHub → Settings → scroll to the Danger Zone → "Unarchive this repository".`,
       };
     }
+    // GitHub explains a protected-branch or ruleset rejection in the response
+    // body, and that explanation is the actionable one — changing an already
+    // correct Contents permission cannot make a write to a protected branch
+    // succeed. So carry GitHub's own reason through rather than overwriting
+    // it with a guess.
+    const reason = (githubReason || "").trim();
+    const looksLikeRule = /protect|ruleset|rule violation|required status|review required|not allowed to (push|update)/i.test(reason);
+    if (operation === "write" && looksLikeRule) {
+      return {
+        message:
+          `Write refused by a repository rule, not by the token: GitHub said "${reason.slice(0, 400)}". ` +
+          `A branch protection rule or ruleset on "${BRANCH}" is blocking this commit, so changing the token's permissions won't help. ` +
+          `Either relax the rule for this branch (GitHub → the repo → Settings → Branches / Rules), or point VAULT_BRANCH at a branch the rule doesn't cover. ` +
+          `${NOT_EVIDENCE}`,
+      };
+    }
     return {
       message:
         `Vault unreachable: the token can see ${OWNER}/${REPO} but GitHub refused to read or write its files (${originalStatus}). ` +
         `${NOT_EVIDENCE} This looks like a token *permission* problem. ` +
         `In GitHub → Settings → Developer settings → Fine-grained tokens, open this token and set Repository permissions → Contents to "Read and write" for ${OWNER}/${REPO}. ` +
-        `Save, then redeploy in Vercel if you regenerated the token.`,
+        `Save, then redeploy in Vercel if you regenerated the token.` +
+        (reason ? ` GitHub's own explanation was: "${reason.slice(0, 400)}" — if that points somewhere else, believe it over this guess.` : ""),
     };
   }
 
@@ -247,7 +282,7 @@ async function diagnoseVaultFailure(
       message: `Couldn't confirm the vault's state: the repository ${OWNER}/${REPO} is reachable, but checking the "${BRANCH}" branch failed with a network error. This is not a report that anything is missing — try again in a moment.`,
     };
   }
-  if (await isRateLimited(branchRes)) return { message: RATE_LIMITED };
+  if (await isRateLimited(branchRes)) return { message: rateLimitedMessage(branchRes) };
   if (branchRes.status === 404) {
     return {
       message:
@@ -286,7 +321,7 @@ async function ghGetPath(path: string) {
     return null; // repo and branch both fine, so this path genuinely doesn't exist
   }
   if (res.status === 401 || res.status === 403 || res.status === 429) {
-    if (await isRateLimited(res)) throw new VaultUnreachable(RATE_LIMITED);
+    if (await isRateLimited(res)) throw new VaultUnreachable(rateLimitedMessage(res));
     const problem = await diagnoseVaultFailure(res.status);
     throw new VaultUnreachable(
       problem?.message ??
@@ -396,18 +431,28 @@ const rawHandler = createMcpHandler(
             // A write rejected for auth reasons must say so, not read as a
             // vague failure the owner can't act on. A read-only token is the
             // common case here: it can read every note and fails only on the
-            // commit, so the message has to name the Contents permission.
+            // commit, so the message has to name the Contents permission —
+            // unless GitHub's own body says a branch rule stopped it, in
+            // which case that reason wins.
+            const rawBody = await res.text().catch(() => "");
+            let ghMessage = rawBody;
+            try {
+              const parsed = JSON.parse(rawBody) as { message?: string };
+              if (parsed?.message) ghMessage = parsed.message;
+            } catch {
+              // Not JSON — keep the raw text.
+            }
             if (res.status === 401 || res.status === 403 || res.status === 404 || res.status === 429) {
               if (await isRateLimited(res)) {
-                return { content: [{ type: "text" as const, text: RATE_LIMITED }], isError: true };
+                return { content: [{ type: "text" as const, text: rateLimitedMessage(res) }], isError: true };
               }
-              const problem = await diagnoseVaultFailure(res.status, "write");
+              const problem = await diagnoseVaultFailure(res.status, "write", ghMessage);
               if (problem) {
                 return { content: [{ type: "text" as const, text: problem.message }], isError: true };
               }
             }
             return {
-              content: [{ type: "text" as const, text: `Write failed: ${res.status} ${await res.text()}` }],
+              content: [{ type: "text" as const, text: `Write failed: ${res.status} ${ghMessage}` }],
               isError: true,
             };
           }
