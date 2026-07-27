@@ -111,9 +111,9 @@ function passphraseForm(
   ${opts.badPassphrase ? '<div class="err">Wrong passphrase.</div>' : ""}
   ${
     throttled
-      ? `<div class="err">Too many wrong passphrases from this network. Try again in ${escapeHtml(
+      ? `<div class="err">Too many attempts from this network. Try again in ${escapeHtml(
           waitLabel(opts.throttledSeconds as number)
-        )}.</div>`
+        )} — the right passphrase won't be accepted until then either, which is what stops guessing. Nothing in your vault has changed.</div>`
       : ""
   }
   <button type="submit" ${throttled ? "disabled" : ""}>Authorize</button>

@@ -119,9 +119,16 @@ What gates what:
 - **Passphrase attempts are throttled**: 8 per caller address per 15
   minutes, after which the form returns `429` until the window passes. An
   attempt is claimed *before* the passphrase is compared, so a burst of
-  simultaneous guesses can't slip through together — and a correct
-  passphrase releases the whole tally, so mistyping your own a few times
-  can't lock you out.
+  simultaneous guesses can't slip through together. Getting it right
+  releases the whole tally, so a mistype or three costs you nothing.
+
+  Spend all 8 and you're held for the rest of the window — **including
+  you, with the right passphrase**. That's not an oversight: a request
+  that's out of budget must not reach the comparison, or an attacker gets
+  unlimited guesses and the throttle is decoration. The wait is capped at
+  15 minutes and nothing is lost; if you'd rather have more room before
+  that happens, raise `PASSPHRASE_MAX_ATTEMPTS` in
+  `app/api/oauth/authorize/route.ts`.
 
 Single-use authorization codes and durable throttling (optional, recommended):
 
