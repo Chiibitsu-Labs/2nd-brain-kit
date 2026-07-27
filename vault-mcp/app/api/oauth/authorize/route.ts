@@ -6,6 +6,14 @@ import {
   timingSafeEqualStrings,
   verifySignedToken,
 } from "../../../../lib/oauth";
+import { callerBucket, checkAttemptAllowed, clearFailedAttempts, registerFailedAttempt } from "../../../../lib/ratelimit";
+
+// Wrong-passphrase budget per caller, per window. Sized so someone
+// fumbling their own passphrase never reaches it — and a correct entry
+// clears the count regardless — while a guesser is held to a few hundred
+// tries a day instead of as many as the network will carry.
+const PASSPHRASE_MAX_FAILURES = 8;
+const PASSPHRASE_WINDOW_SECONDS = 15 * 60;
 
 // THE access-control boundary for this server. The redirect-origin
 // allowlist can't distinguish the vault owner from any other claude.ai or
@@ -65,8 +73,18 @@ function escapeHtml(s: string): string {
     .replaceAll("'", "&#39;");
 }
 
-function passphraseForm(p: OAuthParams, opts: { badPassphrase?: boolean } = {}): Response {
+function waitLabel(seconds: number): string {
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+function passphraseForm(
+  p: OAuthParams,
+  opts: { badPassphrase?: boolean; throttledSeconds?: number } = {}
+): Response {
   const clientHost = new URL(p.redirectUri).hostname;
+  const throttled = typeof opts.throttledSeconds === "number";
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
@@ -89,14 +107,29 @@ function passphraseForm(p: OAuthParams, opts: { badPassphrase?: boolean } = {}):
   <input type="hidden" name="code_challenge" value="${escapeHtml(p.codeChallenge)}">
   <input type="hidden" name="code_challenge_method" value="S256">
   <input type="hidden" name="response_type" value="code">
-  <input type="password" name="passphrase" placeholder="Owner passphrase" autofocus autocomplete="current-password">
+  <input type="password" name="passphrase" placeholder="Owner passphrase" ${throttled ? "disabled" : "autofocus"} autocomplete="current-password">
   ${opts.badPassphrase ? '<div class="err">Wrong passphrase.</div>' : ""}
-  <button type="submit">Authorize</button>
+  ${
+    throttled
+      ? `<div class="err">Too many wrong passphrases from this network. Try again in ${escapeHtml(
+          waitLabel(opts.throttledSeconds as number)
+        )}.</div>`
+      : ""
+  }
+  <button type="submit" ${throttled ? "disabled" : ""}>Authorize</button>
 </form></body></html>`;
-  return new Response(html, {
-    status: opts.badPassphrase ? 401 : 200,
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-  });
+  const headers: Record<string, string> = {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+  };
+  let status = 200;
+  if (throttled) {
+    status = 429;
+    headers["retry-after"] = String(opts.throttledSeconds);
+  } else if (opts.badPassphrase) {
+    status = 401;
+  }
+  return new Response(html, { status, headers });
 }
 
 function misconfigured(): Response {
@@ -119,10 +152,24 @@ export async function POST(req: Request) {
   const v = validateParams(form);
   if ("err" in v) return v.err;
 
+  // Throttle before comparing, so a caller who has burned their budget
+  // gets no signal at all from this request — not even the timing of a
+  // comparison. The verdict is identical whether the submitted passphrase
+  // was right or wrong.
+  const bucket = callerBucket(req);
+  const verdict = await checkAttemptAllowed(bucket, PASSPHRASE_MAX_FAILURES, PASSPHRASE_WINDOW_SECONDS);
+  if (!verdict.allowed) {
+    return passphraseForm(v.ok, { throttledSeconds: verdict.retryAfterSeconds });
+  }
+
   const passphrase = form.get("passphrase") || "";
   if (!timingSafeEqualStrings(passphrase, OWNER_PASSPHRASE)) {
+    await registerFailedAttempt(bucket, PASSPHRASE_WINDOW_SECONDS);
     return passphraseForm(v.ok, { badPassphrase: true });
   }
+  // Correct passphrase: forgive the fumbles that led here, so a few
+  // mistypes never carry over into a lockout later in the day.
+  await clearFailedAttempts(bucket);
 
   // jti = unique code id, so the token endpoint can claim it exactly once
   // (single-use) when a KV store is configured.

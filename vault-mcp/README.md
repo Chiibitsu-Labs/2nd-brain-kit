@@ -41,8 +41,9 @@ Code session with the repo attached.
      server URL could connect their own AI account, because every
      claude.ai/chatgpt.com user's OAuth flow arrives from the same trusted
      origins. Use a long random value (`openssl rand -hex 16` is fine) and
-     keep it in your password manager. There is no rate limiting (stateless
-     server), so entropy is the defense — never a dictionary word. The
+     keep it in your password manager. Wrong guesses are throttled (8 per
+     caller address per 15 minutes), but that only slows a guesser down —
+     entropy is still the real defense, so never a dictionary word. The
      authorize endpoint returns 503 and refuses all authorizations if this
      is unset.
    - `VAULT_OWNER` — **required**: your GitHub username (or org).
@@ -115,8 +116,12 @@ What gates what:
   and are bound to the redirect_uri and code challenge.
 - **The GitHub PAT** is fine-grained: one repo, Contents read/write only —
   worst case if the server is fully compromised is bounded at this repo.
+- **Wrong passphrases are throttled**: 8 failures per caller address per
+  15 minutes, after which the form returns `429` until the window passes.
+  Only failures count and a correct entry clears the tally, so mistyping
+  your own passphrase a few times can't lock you out.
 
-Single-use authorization codes (optional, recommended):
+Single-use authorization codes and durable throttling (optional, recommended):
 
 - Add an **Upstash Redis** store via the Vercel Marketplace (free tier;
   the successor to the now-deprecated Vercel KV). The marketplace
@@ -124,6 +129,8 @@ Single-use authorization codes (optional, recommended):
   `UPSTASH_REDIS_REST_URL`/`_TOKEN`) — the server picks up whichever is
   present, no code change. With it configured, each authorization code
   can be exchanged exactly once (atomic `SET NX`); a replay is rejected.
+  The same store also holds the failed-passphrase tally, which makes the
+  throttle above count correctly across serverless instances.
 - **Without** a KV store the server still works — it just falls back to
   the stateless behavior below.
 
@@ -132,8 +139,15 @@ Remaining limitations:
 - Without a KV store, authorization codes are not strictly single-use —
   replay within the 5-minute window is possible **only** by someone who
   also holds the PKCE code_verifier, which never transits the browser.
-- No rate limiting on the passphrase form — compensate with a
-  high-entropy passphrase, never a memorable word.
+- Without a KV store the passphrase throttle falls back to per-instance
+  memory. Serverless instances are ephemeral and several can be warm at
+  once, so a guesser who lands on fresh instances gets more than 8 tries
+  per window — slower than unlimited, but not the stated limit.
+- The throttle is per caller address either way. It does not stop a
+  guesser spread across many addresses; a global cap would, but a global
+  cap is also a lockout any stranger could trigger against you. So the
+  passphrase itself is still the last line: use high entropy, never a
+  memorable word.
 - Rotating `VAULT_MCP_TOKEN` invalidates the CLI credential only; rotating
   `OAUTH_SIGNING_SECRET` invalidates every OAuth-issued token and forces
   all connectors to re-authorize (that's the "log everyone out" lever).
