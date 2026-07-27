@@ -143,6 +143,18 @@ const RATE_LIMITED = `Vault temporarily unreachable: GitHub is rate-limiting req
 // When the reset header is present, say when; secondary limits often omit it,
 // hence the generic fallback.
 function rateLimitedMessage(res: Response): string {
+  // Retry-After is the authoritative delay for a *secondary* limit, and it can
+  // coexist with an unrelated primary-bucket reset. Prefer it; the primary
+  // reset only describes when the hourly quota refills.
+  const retryAfter = Number(res.headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    const mins = Math.ceil(retryAfter / 60);
+    const wait = retryAfter < 60 ? `${Math.ceil(retryAfter)} seconds` : `${mins} minute${mins === 1 ? "" : "s"}`;
+    return (
+      `Vault temporarily unreachable: GitHub is rate-limiting requests right now. This is throttling, not a credentials problem, so don't rotate anything — and it says nothing about your notes. ` +
+      `GitHub asked to be retried in about ${wait}; retrying sooner will keep failing.`
+    );
+  }
   const reset = Number(res.headers.get("x-ratelimit-reset"));
   if (!Number.isFinite(reset) || reset <= 0) return RATE_LIMITED;
   const resetMs = reset * 1000;
@@ -158,13 +170,25 @@ function rateLimitedMessage(res: Response): string {
 // GitHub signals throttling as 429, or as 403 with a rate-limit body/header.
 // Both are transient; describing either as a credentials failure would send
 // the owner off rotating a perfectly good token.
-async function isRateLimited(res: Response): Promise<boolean> {
+async function isRateLimited(res: Response, knownBody?: string): Promise<boolean> {
   if (res.status === 429) return true;
   if (res.status !== 403) return false;
   if (res.headers.get("x-ratelimit-remaining") === "0") return true;
   if (res.headers.get("retry-after")) return true;
+  // Callers that already consumed the body must pass it: res.clone() throws
+  // synchronously once the body is read, and that throw is not catchable by
+  // the .catch() on .text() — it would surface as a generic error instead of
+  // the rate-limit guidance.
+  if (typeof knownBody === "string") return /rate limit|secondary rate/i.test(knownBody);
   const body = await res.clone().text().catch(() => "");
   return /rate limit|secondary rate/i.test(body);
+}
+
+// GitHub explains protected-branch and ruleset rejections in the body, and
+// sends them under several statuses (403, but also 409 and 422), so the shape
+// of the message is the reliable signal rather than the status code.
+function looksLikeRuleRejection(reason: string): boolean {
+  return /protect|ruleset|rule violation|required status|review required|not allowed to (push|update)/i.test(reason);
 }
 
 // Decides which story a failure really tells. `originalStatus` is the status
@@ -192,6 +216,26 @@ async function diagnoseVaultFailure(
       return { message: `Vault unreachable: GitHub rejected the access token (401). ${NOT_EVIDENCE} ${TOKEN_FIX}` };
     }
     if (repoRes.status === 403) {
+      // A repo-level 403 is often an org policy — SAML SSO not authorized for
+      // this token, an IP allow list, or a pending token-approval request.
+      // Regenerating a token fixes none of those, so GitHub's own explanation
+      // is the actionable part and must not be replaced by a guess.
+      const reason = (await repoRes.text().catch(() => "")).trim();
+      let detail = reason;
+      try {
+        const parsed = JSON.parse(reason) as { message?: string };
+        if (parsed?.message) detail = parsed.message;
+      } catch {
+        // Not JSON — keep the raw text.
+      }
+      if (detail) {
+        return {
+          message:
+            `Vault unreachable: GitHub refused the access token for ${OWNER}/${REPO} (403). GitHub's reason: "${detail.slice(0, 400)}". ` +
+            `${NOT_EVIDENCE} If that mentions SSO, SAML, an IP allow list, or organization approval, a new token won't help — follow what GitHub says there first (commonly: authorize the token for the organization's SSO). ` +
+            `Otherwise: ${TOKEN_FIX}`,
+        };
+      }
       return { message: `Vault unreachable: GitHub refused the access token (403). ${NOT_EVIDENCE} ${TOKEN_FIX}` };
     }
     if (repoRes.status === 404) {
@@ -223,6 +267,22 @@ async function diagnoseVaultFailure(
     // Non-fatal: we just lose the archived hint below.
   }
 
+  const reason = (githubReason || "").trim();
+
+  // Rule rejections are classified on the body's shape, before any status
+  // gate: GitHub sends them as 409 and 422 as well as 403, so gating this
+  // behind the auth statuses would drop the diagnosis for exactly the
+  // statuses that carry it most often.
+  if (operation === "write" && looksLikeRuleRejection(reason)) {
+    return {
+      message:
+        `Write refused by a repository rule, not by the token: GitHub said "${reason.slice(0, 400)}". ` +
+        `A branch protection rule or ruleset on "${BRANCH}" is blocking this commit, so changing the token's permissions won't help. ` +
+        `Either relax the rule for this branch (GitHub → the repo → Settings → Branches / Rules), or point VAULT_BRANCH at a branch the rule doesn't cover. ` +
+        `${NOT_EVIDENCE}`,
+    };
+  }
+
   // Visible metadata is NOT proof the token may read or write file contents:
   // a fine-grained token can carry Metadata access while missing Contents.
   if (originalStatus === 401 || originalStatus === 403) {
@@ -243,17 +303,6 @@ async function diagnoseVaultFailure(
     // correct Contents permission cannot make a write to a protected branch
     // succeed. So carry GitHub's own reason through rather than overwriting
     // it with a guess.
-    const reason = (githubReason || "").trim();
-    const looksLikeRule = /protect|ruleset|rule violation|required status|review required|not allowed to (push|update)/i.test(reason);
-    if (operation === "write" && looksLikeRule) {
-      return {
-        message:
-          `Write refused by a repository rule, not by the token: GitHub said "${reason.slice(0, 400)}". ` +
-          `A branch protection rule or ruleset on "${BRANCH}" is blocking this commit, so changing the token's permissions won't help. ` +
-          `Either relax the rule for this branch (GitHub → the repo → Settings → Branches / Rules), or point VAULT_BRANCH at a branch the rule doesn't cover. ` +
-          `${NOT_EVIDENCE}`,
-      };
-    }
     return {
       message:
         `Vault unreachable: the token can see ${OWNER}/${REPO} but GitHub refused to read or write its files (${originalStatus}). ` +
@@ -442,10 +491,22 @@ const rawHandler = createMcpHandler(
             } catch {
               // Not JSON — keep the raw text.
             }
-            if (res.status === 401 || res.status === 403 || res.status === 404 || res.status === 429) {
-              if (await isRateLimited(res)) {
-                return { content: [{ type: "text" as const, text: rateLimitedMessage(res) }], isError: true };
-              }
+            // Body already consumed above, so hand it to isRateLimited rather
+            // than letting it clone a spent response.
+            if (await isRateLimited(res, rawBody)) {
+              return { content: [{ type: "text" as const, text: rateLimitedMessage(res) }], isError: true };
+            }
+            // Branch-protection and ruleset rejections arrive as 409 or 422 as
+            // well as 403, so classify on the body's shape rather than gating
+            // this behind the auth-status list — otherwise a clearly
+            // rule-shaped rejection falls through to a bare "Write failed".
+            if (
+              looksLikeRuleRejection(ghMessage) ||
+              res.status === 401 ||
+              res.status === 403 ||
+              res.status === 404 ||
+              res.status === 429
+            ) {
               const problem = await diagnoseVaultFailure(res.status, "write", ghMessage);
               if (problem) {
                 return { content: [{ type: "text" as const, text: problem.message }], isError: true };
