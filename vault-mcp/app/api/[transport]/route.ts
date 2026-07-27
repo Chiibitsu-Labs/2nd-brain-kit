@@ -187,7 +187,7 @@ async function diagnoseVaultFailure(
           `1. The token can't see the repo — most common. ${TOKEN_FIX}\n` +
           `2. VAULT_OWNER or VAULT_REPO is misspelled in your Vercel environment settings. Compare them against the repo's real address.\n` +
           `3. The repository was renamed or deleted.\n\n` +
-          `To find out which: open https://github.com/${OWNER}/${REPO} in a browser while signed in as the account that owns the vault. If the repo loads, your notes are intact and it's cause 1 or 2. If GitHub 404s there too, the repo isn't at that address — check your GitHub account for a rename, and if it was deleted, recover it from Settings → Repositories → restore (GitHub keeps deleted repos ~90 days) or from your backups (BACKUP.md).`,
+          `To find out which: open https://github.com/${OWNER}/${REPO} in a browser while signed in as the account that owns the vault. If the repo loads, it exists and is reachable by you, so this is cause 1 or 2 — check the notes are where you expect while you are there. If GitHub 404s there too, the repo is not at that address — check your GitHub account for a rename, and if it was deleted, recover it from Settings → Repositories → restore (GitHub keeps deleted repos ~90 days) or from your backups (BACKUP.md).`,
       };
     }
     return {
@@ -195,7 +195,9 @@ async function diagnoseVaultFailure(
     };
   }
 
-  // The repo is visible — so we know it exists and the notes are there.
+  // The repo is visible, which proves the repo exists and this token can see
+  // it. It proves nothing about the branch or the notes — both are checked
+  // separately below, and neither is ever assumed.
   let repoInfo: { archived?: boolean } = {};
   try {
     repoInfo = (await repoRes.json()) as { archived?: boolean };
@@ -215,7 +217,7 @@ async function diagnoseVaultFailure(
       return {
         message:
           `Write refused: ${OWNER}/${REPO} is archived, and GitHub makes archived repositories read-only — no token can commit to one. ` +
-          `Archived repos stay readable, so your notes are still there to read — you just can't add to them. To start saving again, open the repo on GitHub → Settings → scroll to the Danger Zone → "Unarchive this repository".`,
+          `Archiving blocks writes only — reading is unaffected, though nothing here checked what the repo currently contains. To start saving again, open the repo on GitHub → Settings → scroll to the Danger Zone → "Unarchive this repository".`,
       };
     }
     return {
@@ -253,7 +255,7 @@ async function diagnoseVaultFailure(
         `1. The token lacks Contents access, and GitHub is hiding the branch behind the same "not found" it uses for private resources. In GitHub → Settings → Developer settings → Fine-grained tokens, set Repository permissions → Contents to "Read and write" for ${OWNER}/${REPO}.\n` +
         `2. VAULT_BRANCH points at a name that doesn't exist — check it in your Vercel environment settings (leave it unset to use "main"), then redeploy.\n` +
         `3. That branch was deleted. The commits usually still exist: on GitHub open the repo → Insights → Network, or restore from a recent backup (BACKUP.md). Recreate the branch before pointing the connector back at it.\n\n` +
-        `Open the repo's branch list on GitHub in a browser, signed in as the owner — that one look separates all three: if "${BRANCH}" is listed, you're in case 1; if a different branch is listed, case 2; if the list is missing it entirely, case 3.`,
+        `Open the repo's branch list on GitHub in a browser, signed in as the owner. If "${BRANCH}" is listed, you are in case 1 — a permission problem — and nothing is missing. If it is absent, you are in case 2 or 3, and the list alone cannot tell those apart: a name that was never right and a branch someone deleted look identical from outside. Before repointing VAULT_BRANCH at another branch, check the repo → Insights → Network for commits on a branch by that name, so you do not walk away from history that is still recoverable.`,
     };
   }
   if (!branchRes.ok) {
@@ -271,7 +273,12 @@ class VaultUnreachable extends Error {}
 
 async function ghGetPath(path: string) {
   const cleanPath = path === "." ? "" : path;
-  const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodePath(cleanPath)}?ref=${BRANCH}`;
+  // encodeURIComponent on the ref, not raw interpolation: a branch name may
+  // legally contain "&" or "#", which would otherwise truncate the query and
+  // silently fetch a *different* ref — and then a successful branch probe
+  // below would "confirm" the note is absent when we never asked for the
+  // right branch at all.
+  const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodePath(cleanPath)}?ref=${encodeURIComponent(BRANCH)}`;
   const res = await fetch(url, { headers: ghHeaders() });
   if (res.status === 404) {
     const problem = await diagnoseVaultFailure(404);
