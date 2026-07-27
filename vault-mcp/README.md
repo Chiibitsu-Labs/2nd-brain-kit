@@ -116,10 +116,12 @@ What gates what:
   and are bound to the redirect_uri and code challenge.
 - **The GitHub PAT** is fine-grained: one repo, Contents read/write only —
   worst case if the server is fully compromised is bounded at this repo.
-- **Wrong passphrases are throttled**: 8 failures per caller address per
-  15 minutes, after which the form returns `429` until the window passes.
-  Only failures count and a correct entry clears the tally, so mistyping
-  your own passphrase a few times can't lock you out.
+- **Passphrase attempts are throttled**: 8 per caller address per 15
+  minutes, after which the form returns `429` until the window passes. An
+  attempt is claimed *before* the passphrase is compared, so a burst of
+  simultaneous guesses can't slip through together — and a correct
+  passphrase releases the whole tally, so mistyping your own a few times
+  can't lock you out.
 
 Single-use authorization codes and durable throttling (optional, recommended):
 
@@ -129,7 +131,7 @@ Single-use authorization codes and durable throttling (optional, recommended):
   `UPSTASH_REDIS_REST_URL`/`_TOKEN`) — the server picks up whichever is
   present, no code change. With it configured, each authorization code
   can be exchanged exactly once (atomic `SET NX`); a replay is rejected.
-  The same store also holds the failed-passphrase tally, which makes the
+  The same store also holds the passphrase-attempt tally, which makes the
   throttle above count correctly across serverless instances.
 - **Without** a KV store the server still works — it just falls back to
   the stateless behavior below.

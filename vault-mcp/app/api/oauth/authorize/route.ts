@@ -6,13 +6,13 @@ import {
   timingSafeEqualStrings,
   verifySignedToken,
 } from "../../../../lib/oauth";
-import { callerBucket, checkAttemptAllowed, clearFailedAttempts, registerFailedAttempt } from "../../../../lib/ratelimit";
+import { callerBucket, clearAttempts, reserveAttempt } from "../../../../lib/ratelimit";
 
-// Wrong-passphrase budget per caller, per window. Sized so someone
+// Passphrase attempt budget per caller, per window. Sized so someone
 // fumbling their own passphrase never reaches it — and a correct entry
 // clears the count regardless — while a guesser is held to a few hundred
 // tries a day instead of as many as the network will carry.
-const PASSPHRASE_MAX_FAILURES = 8;
+const PASSPHRASE_MAX_ATTEMPTS = 8;
 const PASSPHRASE_WINDOW_SECONDS = 15 * 60;
 
 // THE access-control boundary for this server. The redirect-origin
@@ -152,24 +152,24 @@ export async function POST(req: Request) {
   const v = validateParams(form);
   if ("err" in v) return v.err;
 
-  // Throttle before comparing, so a caller who has burned their budget
-  // gets no signal at all from this request — not even the timing of a
-  // comparison. The verdict is identical whether the submitted passphrase
-  // was right or wrong.
+  // Spend an attempt *before* comparing. Reserving up front is what makes
+  // the budget hold under concurrency: a check that only reads, and counts
+  // afterwards, would admit every request in a simultaneous batch before
+  // any of them had counted. A caller who is out of budget gets no signal
+  // from this request at all — not even the timing of a comparison.
   const bucket = callerBucket(req);
-  const verdict = await checkAttemptAllowed(bucket, PASSPHRASE_MAX_FAILURES, PASSPHRASE_WINDOW_SECONDS);
+  const verdict = await reserveAttempt(bucket, PASSPHRASE_MAX_ATTEMPTS, PASSPHRASE_WINDOW_SECONDS);
   if (!verdict.allowed) {
     return passphraseForm(v.ok, { throttledSeconds: verdict.retryAfterSeconds });
   }
 
   const passphrase = form.get("passphrase") || "";
   if (!timingSafeEqualStrings(passphrase, OWNER_PASSPHRASE)) {
-    await registerFailedAttempt(bucket, PASSPHRASE_WINDOW_SECONDS);
     return passphraseForm(v.ok, { badPassphrase: true });
   }
-  // Correct passphrase: forgive the fumbles that led here, so a few
+  // Correct passphrase: release every attempt that led here, so a few
   // mistypes never carry over into a lockout later in the day.
-  await clearFailedAttempts(bucket);
+  await clearAttempts(bucket);
 
   // jti = unique code id, so the token endpoint can claim it exactly once
   // (single-use) when a KV store is configured.

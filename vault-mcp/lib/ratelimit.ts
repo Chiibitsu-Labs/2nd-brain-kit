@@ -1,6 +1,6 @@
 import { getRedis } from "./kv";
 
-// Failed-attempt throttling for the owner-passphrase gate.
+// Attempt throttling for the owner-passphrase gate.
 //
 // The passphrase is the only thing standing between a stranger who knows
 // the server URL and the vault: the redirect-origin allowlist can't tell
@@ -8,9 +8,17 @@ import { getRedis } from "./kv";
 // registration is open. Without a throttle, that gate can be guessed at
 // as fast as the network allows.
 //
-// Only *failures* are counted, and a success clears the bucket — so an
-// owner who fumbles the passphrase a few times is never locked out of
-// their own vault, while a guesser is cut to a few tries per window.
+// An attempt is *reserved before* the passphrase is compared, and a
+// correct passphrase clears the whole bucket. So the budget spends only
+// on guesses that go nowhere, and an owner who fumbles a few times and
+// then gets it right walks away with a clean slate.
+//
+// Reserving up front rather than counting failures afterwards is the
+// whole point: a check that only reads, and increments later, admits
+// every request in a concurrent batch before any of them has counted.
+// That turns "8 tries per window" into "8 tries per window, or as many
+// as you can send at once" — which is no limit at all against the one
+// attacker this exists to stop.
 //
 // Scope note, deliberately not papered over: this is per-caller-IP. It
 // raises the cost of a single-source attack by orders of magnitude; it
@@ -24,15 +32,51 @@ export type RateLimitVerdict = { allowed: true } | { allowed: false; retryAfterS
 const PREFIX = "pplimit:";
 
 // ---------------------------------------------------------------------------
-// In-memory fallback
+// Redis path
 // ---------------------------------------------------------------------------
 
-// Used when no KV store is configured, and as the backstop when a
-// configured store is unreachable. Serverless instances are ephemeral and
-// there can be several warm at once, so this is per-instance and leaky by
-// nature — an attacker who happens to land on fresh instances gets more
-// attempts than the nominal limit. It is still far better than no limit,
-// and it degrades toward "slower attacker" rather than "locked-out owner".
+// Increment and read the remaining window in one atomic step.
+//
+// Two things have to be atomic here, and a sequence of client calls gives
+// neither:
+//
+//  - Admission. INCR returns this caller's own position in the window, so
+//    concurrent callers get 1, 2, 3... and each is judged against its own
+//    number. No two requests can both see "under the limit" for the same
+//    slot.
+//  - The expiry. INCR creates a missing key with no TTL. If a separate
+//    EXPIRE were to fail, the key would persist forever; the count would
+//    sit at or above the limit; and because admission is decided before
+//    the passphrase is compared, even the correct passphrase could never
+//    reach the code that clears it. That address would be locked out
+//    permanently. Setting the expiry inside the script removes the gap,
+//    and the `t < 0` branch also repairs any key that somehow lost one.
+const RESERVE_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+local ttl = redis.call('TTL', KEYS[1])
+if ttl < 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+  ttl = tonumber(ARGV[1])
+end
+return {count, ttl}
+`;
+
+// ---------------------------------------------------------------------------
+// In-memory limiter
+// ---------------------------------------------------------------------------
+
+// Runs on every request, whether or not Redis is configured — see
+// reserveAttempt for why it isn't skipped when Redis is healthy.
+//
+// On its own (no KV store) it is per-instance and leaky by nature:
+// serverless instances are ephemeral and several can be warm at once, so
+// an attacker who lands on fresh instances gets more attempts than the
+// nominal limit. It is still far better than no limit, and it degrades
+// toward "slower attacker" rather than "locked-out owner".
+//
+// No check-then-act race here: JavaScript runs one of these to completion
+// before starting the next, so read-modify-write within a single call is
+// indivisible.
 type MemoryEntry = { count: number; expiresAtMs: number };
 const memory = new Map<string, MemoryEntry>();
 
@@ -40,6 +84,13 @@ const memory = new Map<string, MemoryEntry>();
 // without limit — that would turn a brute-force defense into a memory
 // exhaustion vector.
 const MEMORY_MAX_ENTRIES = 5000;
+
+// Introspection for tests, so the MEMORY_MAX_ENTRIES bound above can be
+// asserted rather than argued. Returns a count, never any key material,
+// and is not reachable over HTTP.
+export function memoryEntryCount(): number {
+  return memory.size;
+}
 
 function memoryPrune(nowMs: number): void {
   for (const [k, v] of memory) {
@@ -59,88 +110,76 @@ function memoryPrune(nowMs: number): void {
   if (oldestKey !== null) memory.delete(oldestKey);
 }
 
-// Introspection for tests, so the MEMORY_MAX_ENTRIES bound above can be
-// asserted rather than argued. Returns a count, never any key material,
-// and is not reachable over HTTP.
-export function memoryEntryCount(): number {
-  return memory.size;
-}
-
-function memoryCheck(key: string, limit: number, nowMs: number): RateLimitVerdict {
-  const entry = memory.get(key);
-  if (!entry || entry.expiresAtMs <= nowMs) return { allowed: true };
-  if (entry.count < limit) return { allowed: true };
-  return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((entry.expiresAtMs - nowMs) / 1000)) };
-}
-
-function memoryRegisterFailure(key: string, windowSeconds: number, nowMs: number): void {
+function memoryReserve(key: string, limit: number, windowSeconds: number, nowMs: number): RateLimitVerdict {
   const entry = memory.get(key);
   if (!entry || entry.expiresAtMs <= nowMs) {
     memoryPrune(nowMs);
-    // Fixed window anchored at the first failure — later failures inside
+    // Fixed window anchored at the first attempt — later attempts inside
     // the window raise the count but never extend it, so an attacker
     // cannot stretch a lockout the owner might be sharing an IP with.
     memory.set(key, { count: 1, expiresAtMs: nowMs + windowSeconds * 1000 });
-    return;
+    return { allowed: true };
   }
   entry.count += 1;
+  if (entry.count <= limit) return { allowed: true };
+  return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((entry.expiresAtMs - nowMs) / 1000)) };
 }
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-// Read-only: does not consume an attempt. Call this before comparing the
-// passphrase so a throttled request never reaches the comparison at all.
-export async function checkAttemptAllowed(
+// Consume one attempt from this caller's budget and say whether it may
+// proceed. Call this *before* comparing the passphrase — a throttled
+// request must not reach the comparison at all.
+export async function reserveAttempt(
   bucket: string,
   limit: number,
   windowSeconds: number
 ): Promise<RateLimitVerdict> {
   const key = PREFIX + bucket;
-  const nowMs = Date.now();
+
+  // Reserve in memory unconditionally, even with Redis healthy. If Redis
+  // then flaps, the fallback continues from an accurate count instead of
+  // restarting at zero — otherwise an intermittent store hands budget
+  // back on every recovery, and a slow attacker gets a fresh eight each
+  // time a write fails and a read succeeds.
+  const memoryVerdict = memoryReserve(key, limit, windowSeconds, Date.now());
+
   const redis = getRedis();
   if (redis) {
     try {
-      const count = Number((await redis.get<string | number>(key)) ?? 0);
-      if (!Number.isFinite(count) || count < limit) return { allowed: true };
-      const ttl = await redis.ttl(key);
-      // ttl < 0 means no key or no expiry set; treat as one full window
-      // rather than as "never expires", so a bad TTL can't strand the owner.
-      const retryAfterSeconds = ttl > 0 ? ttl : windowSeconds;
-      return { allowed: false, retryAfterSeconds };
+      const [count, ttl] = await redis.eval<string[], [number, number]>(
+        RESERVE_SCRIPT,
+        [key],
+        [String(windowSeconds)]
+      );
+      if (count > limit) {
+        // TTL is whole seconds, so 0 means "expires within this second".
+        // Report a one-second wait rather than rounding it up to a full
+        // window and telling the caller to come back in 15 minutes.
+        return { allowed: false, retryAfterSeconds: Math.max(1, ttl) };
+      }
+      // Redis counts every instance and so is never behind the local
+      // tally — except after a flap, where memory holds attempts Redis
+      // missed. Deferring to whichever is stricter costs nothing in the
+      // healthy case and closes that gap in the unhealthy one.
+      return memoryVerdict;
     } catch {
-      // Store unreachable. Fall through to the in-memory limiter rather
-      // than 500ing the owner out of their own connector flow — some
-      // throttling, and the passphrase check itself, still apply.
+      // Store unreachable. Fall through to the memory verdict rather than
+      // 500ing the owner out of their own connector flow — the attempt is
+      // already counted there, and the passphrase check still applies.
     }
   }
-  return memoryCheck(key, limit, nowMs);
+
+  return memoryVerdict;
 }
 
-// Call after a passphrase comparison fails.
-export async function registerFailedAttempt(bucket: string, windowSeconds: number): Promise<void> {
+// Call after a correct passphrase, so the attempts that led there are
+// forgiven and a few mistypes never carry into a lockout later.
+export async function clearAttempts(bucket: string): Promise<void> {
   const key = PREFIX + bucket;
-  const redis = getRedis();
-  if (redis) {
-    try {
-      const count = await redis.incr(key);
-      // Set the expiry only on the first failure, which makes this a fixed
-      // window rather than a sliding one. INCR on a missing key creates it
-      // with no TTL, so this call is what keeps the key from living forever.
-      if (count === 1) await redis.expire(key, windowSeconds);
-      return;
-    } catch {
-      // Fall through and at least record it in memory.
-    }
-  }
-  memoryRegisterFailure(key, windowSeconds, Date.now());
-}
-
-// Call after a successful passphrase entry, so an owner who mistyped a few
-// times starts clean.
-export async function clearFailedAttempts(bucket: string): Promise<void> {
-  const key = PREFIX + bucket;
+  memory.delete(key);
   const redis = getRedis();
   if (redis) {
     try {
@@ -149,7 +188,6 @@ export async function clearFailedAttempts(bucket: string): Promise<void> {
       // Non-fatal: the bucket expires on its own.
     }
   }
-  memory.delete(key);
 }
 
 // The caller's address, as seen by the platform's proxy.
