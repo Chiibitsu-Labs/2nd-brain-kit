@@ -118,10 +118,15 @@ function ghHeaders() {
 // deciding which story to tell.
 type VaultAuthProblem = { message: string };
 
+// Only claimed where it's actually provable — i.e. GitHub answered about the
+// repo, so we know it's there. Asserting safety when the probe can't tell is
+// the mirror image of the bug this file exists to fix: the first version said
+// "your notes are gone" when they weren't, and a reassurance that turns out to
+// be wrong costs more than silence, because it sends someone away from a real
+// recovery.
 const SAFE = "Your notes are safe in GitHub";
 
 const TOKEN_FIX =
-  `${SAFE} — this is a credentials problem, not missing data. ` +
   `Check VAULT_GITHUB_TOKEN in your Vercel project's environment settings: it may have expired, been revoked, ` +
   `or been created under a different GitHub account than the one that owns ${OWNER}/${REPO}. ` +
   `Also confirm the token's repository access still lists ${OWNER}/${REPO}. ` +
@@ -159,28 +164,51 @@ async function diagnoseVaultFailure(originalStatus: number): Promise<VaultAuthPr
   if (!repoRes.ok) {
     if (await isRateLimited(repoRes)) return { message: RATE_LIMITED };
     if (repoRes.status === 401) {
-      return { message: `Vault unreachable: GitHub rejected the access token (401). ${TOKEN_FIX}` };
+      return { message: `Vault unreachable: GitHub rejected the access token (401). ${SAFE} — this is a credentials problem, not missing data. ${TOKEN_FIX}` };
     }
     if (repoRes.status === 403) {
-      return { message: `Vault unreachable: GitHub refused the access token (403). ${TOKEN_FIX}` };
+      return { message: `Vault unreachable: GitHub refused the access token (403). ${SAFE} — this is a credentials problem, not missing data. ${TOKEN_FIX}` };
     }
     if (repoRes.status === 404) {
+      // GitHub answers 404 both for "private repo this token may not see" and
+      // for "no such repo", and there is no way to tell them apart from here.
+      // So don't promise the notes are fine — give the one check that settles
+      // it, cheapest first, and keep the real-deletion path visible.
       return {
         message:
-          `Vault unreachable: GitHub reports no repository at ${OWNER}/${REPO} that this token can see. ` +
-          `GitHub returns "not found" for private repos a token isn't allowed to read, so this is almost always a token problem rather than a deleted vault. ${TOKEN_FIX}`,
+          `Vault unreachable: GitHub returns "not found" for ${OWNER}/${REPO}. That has three possible causes and this server can't tell them apart, because GitHub deliberately answers "not found" for private repos a token isn't allowed to see:\n` +
+          `1. The token can't see the repo — most common. ${TOKEN_FIX}\n` +
+          `2. VAULT_OWNER or VAULT_REPO is misspelled in your Vercel environment settings. Compare them against the repo's real address.\n` +
+          `3. The repository was renamed or deleted.\n\n` +
+          `To find out which: open https://github.com/${OWNER}/${REPO} in a browser while signed in as the account that owns the vault. If the repo loads, your notes are intact and it's cause 1 or 2. If GitHub 404s there too, the repo isn't at that address — check your GitHub account for a rename, and if it was deleted, recover it from Settings → Repositories → restore (GitHub keeps deleted repos ~90 days) or from your backups (BACKUP.md).`,
       };
     }
     return {
-      message: `Vault unreachable: GitHub returned ${repoRes.status} for ${OWNER}/${REPO}. ${SAFE} — this is a connection or credentials problem, not missing data.`,
+      message: `Vault unreachable: GitHub returned ${repoRes.status} for ${OWNER}/${REPO}. This is a connection or credentials problem rather than a report about your notes. Try again shortly; if it persists, check VAULT_GITHUB_TOKEN in Vercel.`,
     };
   }
 
-  // The repo is visible. That is NOT proof the token may read or write its
-  // contents: a fine-grained token can carry Metadata access while missing
-  // the Contents permission, in which case the real failure was the 401/403
-  // we started with and must not be reported as a bare status code.
+  // The repo is visible — so we know it exists and the notes are there.
+  let repoInfo: { archived?: boolean } = {};
+  try {
+    repoInfo = (await repoRes.json()) as { archived?: boolean };
+  } catch {
+    // Non-fatal: we just lose the archived hint below.
+  }
+
+  // Visible metadata is NOT proof the token may read or write file contents:
+  // a fine-grained token can carry Metadata access while missing Contents.
   if (originalStatus === 401 || originalStatus === 403) {
+    // An archived repo is read-only for everyone, so writes 403 even with a
+    // perfect read/write token. Prescribing a permission change there sends
+    // the owner to fix something that isn't broken.
+    if (repoInfo.archived) {
+      return {
+        message:
+          `Write refused: ${OWNER}/${REPO} is archived, and GitHub makes archived repositories read-only — no token can commit to one. ` +
+          `${SAFE} and remain readable. To start saving notes again, open the repo on GitHub → Settings → scroll to the Danger Zone → "Unarchive this repository".`,
+      };
+    }
     return {
       message:
         `Vault unreachable: the token can see ${OWNER}/${REPO} but GitHub refused to read or write its files (${originalStatus}). ` +
@@ -190,7 +218,7 @@ async function diagnoseVaultFailure(originalStatus: number): Promise<VaultAuthPr
     };
   }
 
-  // A 404 on a path with a visible repo can still mean the *branch* is wrong:
+  // A 404 on a path with a visible repo can still mean the *branch* is gone:
   // GitHub 404s the contents endpoint for a branch that doesn't exist, which
   // would otherwise be reported as "every note is missing" — the exact
   // false-data-loss story this whole function exists to prevent.
@@ -201,19 +229,30 @@ async function diagnoseVaultFailure(originalStatus: number): Promise<VaultAuthPr
       { headers: ghHeaders() }
     );
   } catch {
-    return null; // couldn't check; don't invent a diagnosis
+    // Inconclusive — and inconclusive must never be reported as "this note
+    // doesn't exist", which is exactly how a transient blip would otherwise
+    // reproduce the false-data-loss bug.
+    return {
+      message: `Couldn't confirm the vault's state: the repository ${OWNER}/${REPO} is reachable, but checking the "${BRANCH}" branch failed with a network error. This is not a report that anything is missing — try again in a moment.`,
+    };
   }
   if (await isRateLimited(branchRes)) return { message: RATE_LIMITED };
   if (branchRes.status === 404) {
     return {
       message:
-        `Vault unreachable: the repository ${OWNER}/${REPO} exists, but it has no branch named "${BRANCH}". ` +
-        `${SAFE} — nothing was deleted; the connector is just pointed at a branch that isn't there. ` +
-        `Check VAULT_BRANCH in your Vercel project's environment settings (leave it unset to use "main"), then redeploy.`,
+        `Vault unreachable: ${OWNER}/${REPO} exists, but it has no branch named "${BRANCH}". Two possibilities:\n` +
+        `1. VAULT_BRANCH points at the wrong name — check it in your Vercel environment settings (leave it unset to use "main"), then redeploy. Your notes are intact on whichever branch they're actually on.\n` +
+        `2. That branch was deleted. The commits usually still exist: on GitHub open the repo → Insights → Network, or restore from a recent backup (BACKUP.md). Recreate the branch before pointing the connector back at it.\n\n` +
+        `Check the repo's branch list on GitHub first — it tells you immediately which of the two you're in.`,
+    };
+  }
+  if (!branchRes.ok) {
+    return {
+      message: `Couldn't confirm the vault's state: checking the "${BRANCH}" branch of ${OWNER}/${REPO} returned ${branchRes.status}. This is not a report that anything is missing — try again shortly.`,
     };
   }
 
-  return null; // repo and branch are both fine — the path genuinely doesn't exist
+  return null; // repo and branch both confirmed present — the path genuinely doesn't exist
 }
 
 // Thrown when the vault itself can't be reached, so every tool reports the
