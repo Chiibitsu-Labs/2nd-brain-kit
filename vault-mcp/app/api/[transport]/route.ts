@@ -238,17 +238,32 @@ async function diagnoseVaultFailure(
     };
   }
 
+  // A 401 on the original request is GitHub's final word: it rejected the
+  // credentials outright. The probe below can still add detail, but it can
+  // also fail transiently or get throttled — and if an inconclusive probe
+  // were allowed to speak last, the owner would be told to retry a request
+  // that will never succeed until the token is fixed. So keep the 401 as the
+  // fallback whenever the probe can't settle anything.
+  const definitive401 = originalStatus === 401 ? {
+    message:
+      `Vault unreachable: GitHub rejected the access token (401) on the original request. ` +
+      `That answer is definitive — the token is expired, revoked, or malformed, and retrying won't change it. ` +
+      `${NOT_EVIDENCE} ${TOKEN_FIX}`,
+  } : null;
+
   let repoRes: Response;
   try {
     repoRes = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers: ghHeaders() });
   } catch {
-    return {
-      message: `Couldn't reach GitHub at all (network error). ${NOT_EVIDENCE} Try again in a moment.`,
-    };
+    return (
+      definitive401 ?? {
+        message: `Couldn't reach GitHub at all (network error). ${NOT_EVIDENCE} Try again in a moment.`,
+      }
+    );
   }
 
   if (!repoRes.ok) {
-    if (await isRateLimited(repoRes)) return { message: rateLimitedMessage(repoRes) };
+    if (await isRateLimited(repoRes)) return definitive401 ?? { message: rateLimitedMessage(repoRes) };
     if (repoRes.status === 401) {
       return { message: `Vault unreachable: GitHub rejected the access token (401). ${NOT_EVIDENCE} ${TOKEN_FIX}` };
     }
@@ -326,12 +341,22 @@ async function diagnoseVaultFailure(
     // correct Contents permission cannot make a write to a protected branch
     // succeed. So carry GitHub's own reason through rather than overwriting
     // it with a guess.
+    // Prescribe the access the failed operation actually needs, no more. A
+    // read only ever needs Contents: Read-only and the collaborator Read
+    // role; telling someone whose *read* failed to grant themselves Write
+    // can't fix it and hands out more access than the job requires.
+    const fix =
+      operation === "write"
+        ? `Two things have to be true, and this server can't tell which one is missing. First, the token itself: GitHub → Settings → Developer settings → Fine-grained tokens, open this token and set Repository permissions → Contents to "Read and write" for ${OWNER}/${REPO}, then redeploy in Vercel if you regenerated it. ` +
+          `Second, the account that owns the token: a token can never grant more access than its owner has, so if that account is a collaborator with the Read role, no token setting will let it write — check the repo's Settings → Collaborators and give it Write.`
+        : `Reading needs Contents access, and a fine-grained token doesn't get it automatically — Metadata alone is what lets the repo show up at all. Go to GitHub → Settings → Developer settings → Fine-grained tokens, open this token and set Repository permissions → Contents to at least "Read-only" for ${OWNER}/${REPO} ("Read and write" if you also want saving to work), then redeploy in Vercel if you regenerated it. ` +
+          `If that's already set, check the account that owns the token still has access to the repo at all — Settings → Collaborators. The Read role is enough for this; don't grant Write to fix a read.`;
     return {
       message:
-        `Vault unreachable: the token can see ${OWNER}/${REPO} but GitHub refused to read or write its files (${originalStatus}). ` +
-        `${NOT_EVIDENCE} This looks like a token *permission* problem. ` +
-        `Two things have to be true, and this server can't tell which one is missing. First, the token itself: GitHub → Settings → Developer settings → Fine-grained tokens, open this token and set Repository permissions → Contents to "Read and write" for ${OWNER}/${REPO}, then redeploy in Vercel if you regenerated it. ` +
-        `Second, the account that owns the token: a token can never grant more access than its owner has, so if that account is a collaborator with the Read role, no token setting will let it write — check the repo's Settings → Collaborators and give it Write.` +
+        `Vault unreachable: the token can see ${OWNER}/${REPO} but GitHub refused to ${
+          operation === "write" ? "write" : "read"
+        } its files (${originalStatus}). ` +
+        `${NOT_EVIDENCE} This looks like a token *permission* problem. ${fix}` +
         (reason ? ` GitHub's own explanation was: "${reason.slice(0, 400)}" — if that points somewhere else, believe it over this guess.` : ""),
     };
   }
@@ -402,13 +427,19 @@ async function diagnoseVaultFailure(
           };
         }
         if (Array.isArray(branches) && branches.length === 0) {
+          // An empty repo is a dead end for a read, but not for a write:
+          // GitHub's contents API creates the first file, first commit, and
+          // the branch in one PUT. Refusing here would have this server
+          // decline the very thing write_file exists to do, and send the
+          // owner off to hand-make a README first. Return "no vault problem"
+          // so the caller's preflight yields null and the write goes ahead —
+          // if it's really a permissions failure, the PUT says so with
+          // evidence instead of this GET-only guess.
+          if (operation === "write") return null;
           return {
             message:
               `The vault repository ${OWNER}/${REPO} exists but is empty — it has no commits yet, so there is no "${BRANCH}" branch and nothing to read. This is a fresh-vault state, not a fault. ` +
-              `Give it a first commit: on GitHub open the repo and use "creating a new file" (a README is fine) with "${BRANCH}" as the branch, or push an existing vault to it. Then try again.` +
-              (operation === "write"
-                ? ` One caveat for saving: everything checked here was a read, so this doesn't confirm the connector can write. If commits still fail after the first one exists, the token needs Contents: "Read and write" and the account behind it needs Write access to the repo.`
-                : ""),
+              `Give it a first commit: on GitHub open the repo and use "creating a new file" (a README is fine) with "${BRANCH}" as the branch, or push an existing vault to it. Then try again. Saving a note through this connector will also create that first commit, provided its token has write access — which nothing here checked, since this was a read.`,
           };
         }
       }
