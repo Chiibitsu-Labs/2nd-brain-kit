@@ -370,6 +370,20 @@ async function diagnoseVaultFailure(
       if (listRes.ok) {
         const branches = (await listRes.json()) as unknown[];
         listChecked = Array.isArray(branches);
+        // A nonempty list is proof of Contents (read) access — the same
+        // permission /branches/{branch} needs. So the earlier 404 wasn't
+        // GitHub hiding a private resource; that branch really is absent, and
+        // offering "fix your token" would send the owner to change a setting
+        // this very response just demonstrated is fine.
+        if (Array.isArray(branches) && branches.length > 0) {
+          return {
+            message:
+              `Vault unreachable: ${OWNER}/${REPO} has branches, but "${BRANCH}" is not one of them. This token can read the branch list, so its permissions are not the problem — the configured branch simply isn't there. Two ways that happens:\n` +
+              `1. VAULT_BRANCH points at a name that never existed — check it in your Vercel environment settings (leave it unset to use "main"), then redeploy.\n` +
+              `2. The branch was deleted. Its commits usually still exist: on GitHub open the repo → Insights → Network, or restore from a recent backup (BACKUP.md), and recreate the branch before pointing the connector back at it.\n\n` +
+              `The repo's branch list on GitHub tells you which name to use. Check Insights → Network for commits under "${BRANCH}" before repointing, so you don't walk away from history that's still recoverable. ${NOT_DATA_LOSS}`,
+          };
+        }
         if (Array.isArray(branches) && branches.length === 0) {
           return {
             message:
