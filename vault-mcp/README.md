@@ -141,10 +141,13 @@ Remaining limitations:
 - Without a KV store, authorization codes are not strictly single-use —
   replay within the 5-minute window is possible **only** by someone who
   also holds the PKCE code_verifier, which never transits the browser.
-- Without a KV store the passphrase throttle falls back to per-instance
-  memory. Serverless instances are ephemeral and several can be warm at
-  once, so a guesser who lands on fresh instances gets more than 8 tries
-  per window — slower than unlimited, but not the stated limit.
+- Without a KV store — or during a KV outage — the passphrase throttle
+  falls back to per-instance memory and the count restarts. Serverless
+  instances are ephemeral and several can be warm at once, so a guesser
+  gets more than 8 tries per window: slower than unlimited, but not the
+  stated limit. Exactly one store decides at a time, deliberately —
+  combining them produced lockouts that outlived the window that caused
+  them, and locking you out of your own vault is the worse failure.
 - The throttle is per caller address either way. It does not stop a
   guesser spread across many addresses; a global cap would, but a global
   cap is also a lockout any stranger could trigger against you. So the
