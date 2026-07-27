@@ -122,6 +122,10 @@ What gates what:
   simultaneous guesses can't slip through together. Getting it right
   releases the whole tally, so a mistype or three costs you nothing.
 
+  Cross-site form posts to the authorize endpoint are refused before any
+  budget is spent, so a hostile page you merely visit can't burn your
+  attempts and keep you from connecting.
+
   Spend all 8 and you're held for the rest of the window — **including
   you, with the right passphrase**. That's not an oversight: a request
   that's out of budget must not reach the comparison, or an attacker gets

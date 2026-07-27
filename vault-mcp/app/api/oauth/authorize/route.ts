@@ -8,10 +8,16 @@ import {
 } from "../../../../lib/oauth";
 import { callerBucket, clearAttempts, reserveAttempt } from "../../../../lib/ratelimit";
 
-// Passphrase attempt budget per caller, per window. Sized so someone
-// fumbling their own passphrase never reaches it — and a correct entry
-// clears the count regardless — while a guesser is held to a few hundred
-// tries a day instead of as many as the network will carry.
+// Passphrase attempt budget per caller, per window. A guesser is held to a
+// few hundred tries a day instead of as many as the network will carry.
+//
+// Getting it right within the remaining budget clears the count, so a few
+// fumbles cost nothing. Spending the budget outright is different: the next
+// request is refused before any comparison, so the correct passphrase is
+// refused too until the window turns over. That is deliberate — an
+// over-budget request that still compared would hand a guesser unlimited
+// attempts — but it does mean the owner can lock themselves out for up to
+// PASSPHRASE_WINDOW_SECONDS. Raise this if that trade feels wrong.
 const PASSPHRASE_MAX_ATTEMPTS = 8;
 const PASSPHRASE_WINDOW_SECONDS = 15 * 60;
 
@@ -88,6 +94,15 @@ function passphraseForm(
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+${
+  // The controls below are disabled while throttled, and nothing on a
+  // static page re-enables them — so someone who does exactly what the
+  // message says, waits, would find the form still dead and no hint that a
+  // reload is what fixes it. Reload it for them one second after the wait
+  // ends. A meta refresh always issues a GET, so this re-renders the form
+  // rather than resubmitting the passphrase.
+  throttled ? `<meta http-equiv="refresh" content="${(opts.throttledSeconds as number) + 1}">` : ""
+}
 <title>${escapeHtml(vaultLabel())} — Authorize</title>
 <style>
   body{font-family:system-ui,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#111;color:#eee}
@@ -113,7 +128,7 @@ function passphraseForm(
     throttled
       ? `<div class="err">Too many attempts from this network. Try again in ${escapeHtml(
           waitLabel(opts.throttledSeconds as number)
-        )} — the right passphrase won't be accepted until then either, which is what stops guessing. Nothing in your vault has changed.</div>`
+        )} — the right passphrase won't be accepted until then either, which is what stops guessing. Nothing in your vault has changed.<br><br>This page re-enables itself when the wait is over. If you'd rather not leave it open, come back and reload.</div>`
       : ""
   }
   <button type="submit" ${throttled ? "disabled" : ""}>Authorize</button>
@@ -132,6 +147,40 @@ function passphraseForm(
   return new Response(html, { status, headers });
 }
 
+// True when a POST demonstrably came from another site.
+//
+// Client registration is public, so an attacker can hold valid OAuth fields
+// and put auto-submitting forms on a page. Before the throttle existed that
+// bought them nothing — the passphrase still had to be right. The throttle
+// turned it into a weapon: eight hidden cross-origin submissions from a page
+// the owner merely visits will spend the owner's own budget and keep them
+// from authorizing, repeatable every window. A rate limit that an attacker
+// can aim at the victim is worse than no rate limit, so cross-site posts are
+// refused before anything is reserved.
+//
+// Deliberately evidence-based, never guessing. Sec-Fetch-Site is set by the
+// browser and cannot be forged from script; Origin is sent on every POST by
+// every browser that matters. Absent both, the request is treated as
+// same-site — a curl or a legacy client should not be locked out over a
+// header it never sends, and neither can mount this attack, which needs a
+// browser to carry the victim's address.
+export function isCrossSitePost(req: Request): boolean {
+  const site = req.headers.get("sec-fetch-site");
+  if (site === "cross-site" || site === "same-site") return true;
+
+  const origin = req.headers.get("origin");
+  if (!origin) return false;
+  // Behind Vercel's proxy the forwarded host is the public one; Host alone
+  // can be the internal address and would never match a real Origin.
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+  if (!host) return false;
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true; // unparseable Origin is not something to give benefit of doubt
+  }
+}
+
 function misconfigured(): Response {
   return new Response(
     "Server not configured: VAULT_OWNER_PASSPHRASE and OAUTH_SIGNING_SECRET must be set. Refusing to authorize.",
@@ -148,6 +197,13 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   if (!OWNER_PASSPHRASE || !hasSigningSecret()) return misconfigured();
+  // Before the body is read, and well before any budget is spent.
+  if (isCrossSitePost(req)) {
+    return new Response("Cross-site form submissions are not accepted here.", {
+      status: 403,
+      headers: { "cache-control": "no-store" },
+    });
+  }
   const form = new URLSearchParams(await req.text());
   const v = validateParams(form);
   if ("err" in v) return v.err;
