@@ -118,48 +118,102 @@ function ghHeaders() {
 // deciding which story to tell.
 type VaultAuthProblem = { message: string };
 
-async function repoAccessProblem(): Promise<VaultAuthProblem | null> {
-  let res: Response;
+const SAFE = "Your notes are safe in GitHub";
+
+const TOKEN_FIX =
+  `${SAFE} — this is a credentials problem, not missing data. ` +
+  `Check VAULT_GITHUB_TOKEN in your Vercel project's environment settings: it may have expired, been revoked, ` +
+  `or been created under a different GitHub account than the one that owns ${OWNER}/${REPO}. ` +
+  `Also confirm the token's repository access still lists ${OWNER}/${REPO}. ` +
+  `Generate a fresh token, update it in Vercel, redeploy, then reconnect.`;
+
+const RATE_LIMITED = `Vault temporarily unreachable: GitHub is rate-limiting requests right now. ${SAFE} — this is throttling, not a credentials problem, so don't rotate anything. Wait a few minutes and try again.`;
+
+// GitHub signals throttling as 429, or as 403 with a rate-limit body/header.
+// Both are transient; describing either as a credentials failure would send
+// the owner off rotating a perfectly good token.
+async function isRateLimited(res: Response): Promise<boolean> {
+  if (res.status === 429) return true;
+  if (res.status !== 403) return false;
+  if (res.headers.get("x-ratelimit-remaining") === "0") return true;
+  if (res.headers.get("retry-after")) return true;
+  const body = await res.clone().text().catch(() => "");
+  return /rate limit|secondary rate/i.test(body);
+}
+
+// Decides which story a failure really tells. `originalStatus` is the status
+// of the call that actually failed — it matters, because a token can be
+// allowed to see a repo's metadata while being refused its *contents*, and
+// then a successful metadata probe would otherwise "clear" a real permissions
+// problem.
+async function diagnoseVaultFailure(originalStatus: number): Promise<VaultAuthProblem | null> {
+  let repoRes: Response;
   try {
-    res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers: ghHeaders() });
+    repoRes = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers: ghHeaders() });
   } catch {
     return {
-      message:
-        "Couldn't reach GitHub at all (network error). Your notes are safe — this is a connection problem, not missing data. Try again in a moment.",
+      message: `Couldn't reach GitHub at all (network error). ${SAFE} — this is a connection problem, not missing data. Try again in a moment.`,
     };
   }
-  if (res.ok) return null; // repo is visible, so a 404 on a path is a real not-found
 
-  const fix =
-    `Your notes are safe in GitHub — this is a credentials problem, not missing data. ` +
-    `Check VAULT_GITHUB_TOKEN in your Vercel project's environment settings: it may have expired, been revoked, ` +
-    `or been created under a different GitHub account than the one that owns ${OWNER}/${REPO}. ` +
-    `Also confirm the token's repository access still lists ${OWNER}/${REPO}. ` +
-    `Generate a fresh token, update it in Vercel, redeploy, then reconnect.`;
-
-  if (res.status === 401) {
-    return { message: `Vault unreachable: GitHub rejected the access token (401). ${fix}` };
-  }
-  if (res.status === 403) {
-    const body = await res.text().catch(() => "");
-    if (/rate limit/i.test(body)) {
+  if (!repoRes.ok) {
+    if (await isRateLimited(repoRes)) return { message: RATE_LIMITED };
+    if (repoRes.status === 401) {
+      return { message: `Vault unreachable: GitHub rejected the access token (401). ${TOKEN_FIX}` };
+    }
+    if (repoRes.status === 403) {
+      return { message: `Vault unreachable: GitHub refused the access token (403). ${TOKEN_FIX}` };
+    }
+    if (repoRes.status === 404) {
       return {
         message:
-          "Vault temporarily unreachable: GitHub's rate limit is in effect. Your notes are safe — wait a few minutes and try again.",
+          `Vault unreachable: GitHub reports no repository at ${OWNER}/${REPO} that this token can see. ` +
+          `GitHub returns "not found" for private repos a token isn't allowed to read, so this is almost always a token problem rather than a deleted vault. ${TOKEN_FIX}`,
       };
     }
-    return { message: `Vault unreachable: GitHub refused the access token (403). ${fix}` };
-  }
-  if (res.status === 404) {
     return {
-      message:
-        `Vault unreachable: GitHub reports no repository at ${OWNER}/${REPO} that this token can see. ` +
-        `GitHub returns "not found" for private repos a token isn't allowed to read, so this is almost always a token problem rather than a deleted vault. ${fix}`,
+      message: `Vault unreachable: GitHub returned ${repoRes.status} for ${OWNER}/${REPO}. ${SAFE} — this is a connection or credentials problem, not missing data.`,
     };
   }
-  return {
-    message: `Vault unreachable: GitHub returned ${res.status} for ${OWNER}/${REPO}. Your notes are safe — this is a connection or credentials problem, not missing data.`,
-  };
+
+  // The repo is visible. That is NOT proof the token may read or write its
+  // contents: a fine-grained token can carry Metadata access while missing
+  // the Contents permission, in which case the real failure was the 401/403
+  // we started with and must not be reported as a bare status code.
+  if (originalStatus === 401 || originalStatus === 403) {
+    return {
+      message:
+        `Vault unreachable: the token can see ${OWNER}/${REPO} but GitHub refused to read or write its files (${originalStatus}). ` +
+        `${SAFE} — this is a token *permission* problem, not missing data. ` +
+        `In GitHub → Settings → Developer settings → Fine-grained tokens, open this token and set Repository permissions → Contents to "Read and write" for ${OWNER}/${REPO}. ` +
+        `Save, then redeploy in Vercel if you regenerated the token.`,
+    };
+  }
+
+  // A 404 on a path with a visible repo can still mean the *branch* is wrong:
+  // GitHub 404s the contents endpoint for a branch that doesn't exist, which
+  // would otherwise be reported as "every note is missing" — the exact
+  // false-data-loss story this whole function exists to prevent.
+  let branchRes: Response;
+  try {
+    branchRes = await fetch(
+      `https://api.github.com/repos/${OWNER}/${REPO}/branches/${encodeURIComponent(BRANCH)}`,
+      { headers: ghHeaders() }
+    );
+  } catch {
+    return null; // couldn't check; don't invent a diagnosis
+  }
+  if (await isRateLimited(branchRes)) return { message: RATE_LIMITED };
+  if (branchRes.status === 404) {
+    return {
+      message:
+        `Vault unreachable: the repository ${OWNER}/${REPO} exists, but it has no branch named "${BRANCH}". ` +
+        `${SAFE} — nothing was deleted; the connector is just pointed at a branch that isn't there. ` +
+        `Check VAULT_BRANCH in your Vercel project's environment settings (leave it unset to use "main"), then redeploy.`,
+    };
+  }
+
+  return null; // repo and branch are both fine — the path genuinely doesn't exist
 }
 
 // Thrown when the vault itself can't be reached, so every tool reports the
@@ -171,13 +225,17 @@ async function ghGetPath(path: string) {
   const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodePath(cleanPath)}?ref=${BRANCH}`;
   const res = await fetch(url, { headers: ghHeaders() });
   if (res.status === 404) {
-    const problem = await repoAccessProblem();
+    const problem = await diagnoseVaultFailure(404);
     if (problem) throw new VaultUnreachable(problem.message);
-    return null; // repo reachable, so this path genuinely doesn't exist
+    return null; // repo and branch both fine, so this path genuinely doesn't exist
   }
-  if (res.status === 401 || res.status === 403) {
-    const problem = await repoAccessProblem();
-    throw new VaultUnreachable(problem?.message ?? `GitHub refused the request (${res.status}).`);
+  if (res.status === 401 || res.status === 403 || res.status === 429) {
+    if (await isRateLimited(res)) throw new VaultUnreachable(RATE_LIMITED);
+    const problem = await diagnoseVaultFailure(res.status);
+    throw new VaultUnreachable(
+      problem?.message ??
+        `Vault unreachable: GitHub refused the request (${res.status}). ${SAFE} — this is a credentials or permission problem, not missing data.`
+    );
   }
   if (!res.ok) {
     throw new Error(`GitHub GET ${path} failed: ${res.status} ${await res.text()}`);
@@ -280,9 +338,14 @@ const rawHandler = createMcpHandler(
           );
           if (!res.ok) {
             // A write rejected for auth reasons must say so, not read as a
-            // vague failure the owner can't act on.
-            if (res.status === 401 || res.status === 403 || res.status === 404) {
-              const problem = await repoAccessProblem();
+            // vague failure the owner can't act on. A read-only token is the
+            // common case here: it can read every note and fails only on the
+            // commit, so the message has to name the Contents permission.
+            if (res.status === 401 || res.status === 403 || res.status === 404 || res.status === 429) {
+              if (await isRateLimited(res)) {
+                return { content: [{ type: "text" as const, text: RATE_LIMITED }], isError: true };
+              }
+              const problem = await diagnoseVaultFailure(res.status);
               if (problem) {
                 return { content: [{ type: "text" as const, text: problem.message }], isError: true };
               }
