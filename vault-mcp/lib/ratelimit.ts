@@ -77,7 +77,13 @@ return {count, ttl}
 // No check-then-act race here: JavaScript runs one of these to completion
 // before starting the next, so read-modify-write within a single call is
 // indivisible.
-type MemoryEntry = { count: number; expiresAtMs: number };
+// `unbacked` marks an entry holding attempts Redis never saw, because a
+// Redis call failed while this window was open. It is what lets a shared
+// count of 1 be read correctly: with the flag clear it means the window
+// genuinely rolled over, with it set it can equally mean Redis lost the
+// tally while it was down. Those two need opposite handling and are
+// otherwise indistinguishable.
+type MemoryEntry = { count: number; expiresAtMs: number; unbacked: boolean };
 const memory = new Map<string, MemoryEntry>();
 
 // Bounded so a stream of distinct source addresses can't grow the map
@@ -117,12 +123,50 @@ function memoryReserve(key: string, limit: number, windowSeconds: number, nowMs:
     // Fixed window anchored at the first attempt — later attempts inside
     // the window raise the count but never extend it, so an attacker
     // cannot stretch a lockout the owner might be sharing an IP with.
-    memory.set(key, { count: 1, expiresAtMs: nowMs + windowSeconds * 1000 });
+    memory.set(key, { count: 1, expiresAtMs: nowMs + windowSeconds * 1000, unbacked: false });
     return { allowed: true };
   }
   entry.count += 1;
   if (entry.count <= limit) return { allowed: true };
   return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((entry.expiresAtMs - nowMs) / 1000)) };
+}
+
+// Bring this instance's entry into line with the shared window, and return
+// the count to judge against.
+//
+// The two windows do not start at the same moment: a warm instance can
+// have opened its local window long after (or before) Redis opened the
+// shared one. Left alone, a local window that outlives the shared one goes
+// on rejecting after Redis has rolled over — including rejecting the
+// correct passphrase, and handing a caller who already waited out Redis's
+// Retry-After a fresh, longer 429. Redis owns the window boundary, so
+// adopt it on every successful call.
+function memoryReconcile(key: string, redisCount: number, ttlSeconds: number, nowMs: number): number {
+  const expiresAtMs = nowMs + ttlSeconds * 1000;
+  const entry = memory.get(key);
+  // A Redis count of 1 means the shared window was created by this very
+  // request. That happens two ways, and they need opposite treatment:
+  //
+  //  - The old window expired, or another instance cleared the bucket on a
+  //    correct passphrase. Any local entry belongs to a window that is over
+  //    and carrying its count forward would extend a lockout past the end
+  //    of the window that justified it.
+  //  - Redis was down and lost the tally. Those attempts still happened.
+  //    Resetting here would hand a guesser a fresh budget every time the
+  //    store flapped, which is the whole reason the local entry is kept.
+  //
+  // `unbacked` is the only thing that tells them apart.
+  if (!entry || (redisCount === 1 && !entry.unbacked)) {
+    memory.set(key, { count: redisCount, expiresAtMs, unbacked: false });
+    return redisCount;
+  }
+  // Mid-window: keep whichever count is higher. Redis is normally ahead,
+  // since it sees every instance; local is ahead only where Redis dropped
+  // writes during a flap, and that excess is exactly what must not be
+  // handed back on recovery.
+  entry.count = Math.max(entry.count, redisCount);
+  entry.expiresAtMs = expiresAtMs;
+  return entry.count;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,21 +198,27 @@ export async function reserveAttempt(
         [key],
         [String(windowSeconds)]
       );
-      if (count > limit) {
-        // TTL is whole seconds, so 0 means "expires within this second".
-        // Report a one-second wait rather than rounding it up to a full
-        // window and telling the caller to come back in 15 minutes.
-        return { allowed: false, retryAfterSeconds: Math.max(1, ttl) };
-      }
-      // Redis counts every instance and so is never behind the local
-      // tally — except after a flap, where memory holds attempts Redis
-      // missed. Deferring to whichever is stricter costs nothing in the
-      // healthy case and closes that gap in the unhealthy one.
-      return memoryVerdict;
+      // TTL is whole seconds, so 0 means "expires within this second".
+      // Treat that as a one-second wait rather than rounding it up to a
+      // full window and telling the caller to come back in 15 minutes.
+      const retryAfterSeconds = Math.max(1, ttl);
+      // Redis owns both the count and the window. Reconciling folds any
+      // flap-era excess this instance is holding into the shared window
+      // instead of letting a stale local window outlive it in either
+      // direction — too strict or too lenient.
+      const effectiveCount = memoryReconcile(key, count, retryAfterSeconds, Date.now());
+      if (effectiveCount > limit) return { allowed: false, retryAfterSeconds };
+      return { allowed: true };
     } catch {
       // Store unreachable. Fall through to the memory verdict rather than
       // 500ing the owner out of their own connector flow — the attempt is
       // already counted there, and the passphrase check still applies.
+      //
+      // Mark the window: this attempt is one Redis has no record of, so
+      // when the store comes back and reports a fresh count of 1, that
+      // must not be mistaken for a window that legitimately rolled over.
+      const entry = memory.get(key);
+      if (entry) entry.unbacked = true;
     }
   }
 
