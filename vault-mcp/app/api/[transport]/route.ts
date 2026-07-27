@@ -155,6 +155,11 @@ function rateLimitedMessage(res: Response): string {
       `GitHub asked to be retried in about ${wait}; retrying sooner will keep failing.`
     );
   }
+  // x-ratelimit-reset describes the *primary* hourly bucket. On a secondary
+  // limit that bucket is often untouched, so quoting its reset would tell an
+  // owner to wait up to an hour for a throttle that clears in seconds. Only
+  // trust it when the primary quota is actually exhausted.
+  if (res.headers.get("x-ratelimit-remaining") !== "0") return RATE_LIMITED;
   const reset = Number(res.headers.get("x-ratelimit-reset"));
   if (!Number.isFinite(reset) || reset <= 0) return RATE_LIMITED;
   const resetMs = reset * 1000;
@@ -188,7 +193,15 @@ async function isRateLimited(res: Response, knownBody?: string): Promise<boolean
 // sends them under several statuses (403, but also 409 and 422), so the shape
 // of the message is the reliable signal rather than the status code.
 function looksLikeRuleRejection(reason: string): boolean {
-  return /protect|ruleset|rule violation|required status|review required|not allowed to (push|update)/i.test(reason);
+  // Deliberately narrow. "not allowed to push" on its own is what a
+  // read-only collaborator gets, and calling that a branch rule would send
+  // the owner to Settings → Branches to loosen a rule that isn't the
+  // problem, while telling them their token permissions are fine when those
+  // are exactly what's wrong. Require language that only branch protection
+  // or a ruleset produces.
+  return /protected branch|branch protection|ruleset|rule violation|required status check|review required|changes must be made through a pull request/i.test(
+    reason
+  );
 }
 
 // Decides which story a failure really tells. `originalStatus` is the status
@@ -201,6 +214,22 @@ async function diagnoseVaultFailure(
   operation: "read" | "write" = "read",
   githubReason?: string
 ): Promise<VaultAuthProblem | null> {
+  // A rule-shaped rejection is already definitive — GitHub named the cause —
+  // so decide it before touching the network. The probe below can itself fail
+  // or be rate-limited (a rejected write may have consumed the last request in
+  // the window), and an early return there would throw away the one
+  // explanation that was certain.
+  const preReason = (githubReason || "").trim();
+  if (operation === "write" && looksLikeRuleRejection(preReason)) {
+    return {
+      message:
+        `Write refused by a repository rule, not by the token: GitHub said "${preReason.slice(0, 400)}". ` +
+        `A branch protection rule or ruleset on "${BRANCH}" is blocking this commit, so changing the token's permissions won't help. ` +
+        `Either relax the rule for this branch (GitHub → the repo → Settings → Branches / Rules), or point VAULT_BRANCH at a branch the rule doesn't cover. ` +
+        `${NOT_EVIDENCE}`,
+    };
+  }
+
   let repoRes: Response;
   try {
     repoRes = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers: ghHeaders() });
@@ -267,21 +296,7 @@ async function diagnoseVaultFailure(
     // Non-fatal: we just lose the archived hint below.
   }
 
-  const reason = (githubReason || "").trim();
-
-  // Rule rejections are classified on the body's shape, before any status
-  // gate: GitHub sends them as 409 and 422 as well as 403, so gating this
-  // behind the auth statuses would drop the diagnosis for exactly the
-  // statuses that carry it most often.
-  if (operation === "write" && looksLikeRuleRejection(reason)) {
-    return {
-      message:
-        `Write refused by a repository rule, not by the token: GitHub said "${reason.slice(0, 400)}". ` +
-        `A branch protection rule or ruleset on "${BRANCH}" is blocking this commit, so changing the token's permissions won't help. ` +
-        `Either relax the rule for this branch (GitHub → the repo → Settings → Branches / Rules), or point VAULT_BRANCH at a branch the rule doesn't cover. ` +
-        `${NOT_EVIDENCE}`,
-    };
-  }
+  const reason = preReason;
 
   // Visible metadata is NOT proof the token may read or write file contents:
   // a fine-grained token can carry Metadata access while missing Contents.
@@ -333,6 +348,29 @@ async function diagnoseVaultFailure(
   }
   if (await isRateLimited(branchRes)) return { message: rateLimitedMessage(branchRes) };
   if (branchRes.status === 404) {
+    // A repository created without an initial commit has no branches at all,
+    // so contents and branch both 404 for a completely benign reason. Saying
+    // "fix your token" or "recover the deleted branch" there sends someone
+    // chasing a problem that doesn't exist — the vault just hasn't started.
+    try {
+      const listRes = await fetch(
+        `https://api.github.com/repos/${OWNER}/${REPO}/branches?per_page=1`,
+        { headers: ghHeaders() }
+      );
+      if (listRes.ok) {
+        const branches = (await listRes.json()) as unknown[];
+        if (Array.isArray(branches) && branches.length === 0) {
+          return {
+            message:
+              `The vault repository ${OWNER}/${REPO} exists but is empty — it has no commits yet, so there is no "${BRANCH}" branch and no notes to read. Nothing is wrong with your token or your setup. ` +
+              `Give it a first commit and the connector will work: on GitHub open the repo and use "creating a new file" (a README is fine) with "${BRANCH}" as the branch, or push an existing vault to it. Then try again.`,
+          };
+        }
+      }
+    } catch {
+      // Couldn't list branches — fall through to the ambiguous diagnosis,
+      // which is still better than silence.
+    }
     return {
       message:
         `Vault unreachable: GitHub returns "not found" for the branch "${BRANCH}" of ${OWNER}/${REPO}. Seeing the repo doesn't prove this token may read its branches — a fine-grained token gets Metadata access automatically but needs Contents access for this — so there are three possibilities:\n` +
