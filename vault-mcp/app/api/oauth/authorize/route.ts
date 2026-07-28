@@ -6,6 +6,21 @@ import {
   timingSafeEqualStrings,
   verifySignedToken,
 } from "../../../../lib/oauth";
+import { callerBucket, clearAttempts, reserveAttempt } from "../../../../lib/ratelimit";
+import { isCrossSitePost } from "../../../../lib/samesite";
+
+// Passphrase attempt budget per caller, per window. A guesser is held to a
+// few hundred tries a day instead of as many as the network will carry.
+//
+// Getting it right within the remaining budget clears the count, so a few
+// fumbles cost nothing. Spending the budget outright is different: the next
+// request is refused before any comparison, so the correct passphrase is
+// refused too until the window turns over. That is deliberate — an
+// over-budget request that still compared would hand a guesser unlimited
+// attempts — but it does mean the owner can lock themselves out for up to
+// PASSPHRASE_WINDOW_SECONDS. Raise this if that trade feels wrong.
+const PASSPHRASE_MAX_ATTEMPTS = 8;
+const PASSPHRASE_WINDOW_SECONDS = 15 * 60;
 
 // THE access-control boundary for this server. The redirect-origin
 // allowlist can't distinguish the vault owner from any other claude.ai or
@@ -65,11 +80,30 @@ function escapeHtml(s: string): string {
     .replaceAll("'", "&#39;");
 }
 
-function passphraseForm(p: OAuthParams, opts: { badPassphrase?: boolean } = {}): Response {
+function waitLabel(seconds: number): string {
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+function passphraseForm(
+  p: OAuthParams,
+  opts: { badPassphrase?: boolean; throttledSeconds?: number } = {}
+): Response {
   const clientHost = new URL(p.redirectUri).hostname;
+  const throttled = typeof opts.throttledSeconds === "number";
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+${
+  // The controls below are disabled while throttled, and nothing on a
+  // static page re-enables them — so someone who does exactly what the
+  // message says, waits, would find the form still dead and no hint that a
+  // reload is what fixes it. Reload it for them one second after the wait
+  // ends. A meta refresh always issues a GET, so this re-renders the form
+  // rather than resubmitting the passphrase.
+  throttled ? `<meta http-equiv="refresh" content="${(opts.throttledSeconds as number) + 1}">` : ""
+}
 <title>${escapeHtml(vaultLabel())} — Authorize</title>
 <style>
   body{font-family:system-ui,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#111;color:#eee}
@@ -89,14 +123,29 @@ function passphraseForm(p: OAuthParams, opts: { badPassphrase?: boolean } = {}):
   <input type="hidden" name="code_challenge" value="${escapeHtml(p.codeChallenge)}">
   <input type="hidden" name="code_challenge_method" value="S256">
   <input type="hidden" name="response_type" value="code">
-  <input type="password" name="passphrase" placeholder="Owner passphrase" autofocus autocomplete="current-password">
+  <input type="password" name="passphrase" placeholder="Owner passphrase" ${throttled ? "disabled" : "autofocus"} autocomplete="current-password">
   ${opts.badPassphrase ? '<div class="err">Wrong passphrase.</div>' : ""}
-  <button type="submit">Authorize</button>
+  ${
+    throttled
+      ? `<div class="err">Too many attempts from this network. Try again in ${escapeHtml(
+          waitLabel(opts.throttledSeconds as number)
+        )} — the right passphrase won't be accepted until then either, which is what stops guessing. Nothing in your vault has changed.<br><br>This page re-enables itself when the wait is over. If you'd rather not leave it open, come back and reload.</div>`
+      : ""
+  }
+  <button type="submit" ${throttled ? "disabled" : ""}>Authorize</button>
 </form></body></html>`;
-  return new Response(html, {
-    status: opts.badPassphrase ? 401 : 200,
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-  });
+  const headers: Record<string, string> = {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+  };
+  let status = 200;
+  if (throttled) {
+    status = 429;
+    headers["retry-after"] = String(opts.throttledSeconds);
+  } else if (opts.badPassphrase) {
+    status = 401;
+  }
+  return new Response(html, { status, headers });
 }
 
 function misconfigured(): Response {
@@ -115,14 +164,35 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   if (!OWNER_PASSPHRASE || !hasSigningSecret()) return misconfigured();
+  // Before the body is read, and well before any budget is spent.
+  if (isCrossSitePost(req)) {
+    return new Response("Cross-site form submissions are not accepted here.", {
+      status: 403,
+      headers: { "cache-control": "no-store" },
+    });
+  }
   const form = new URLSearchParams(await req.text());
   const v = validateParams(form);
   if ("err" in v) return v.err;
+
+  // Spend an attempt *before* comparing. Reserving up front is what makes
+  // the budget hold under concurrency: a check that only reads, and counts
+  // afterwards, would admit every request in a simultaneous batch before
+  // any of them had counted. A caller who is out of budget gets no signal
+  // from this request at all — not even the timing of a comparison.
+  const bucket = callerBucket(req);
+  const verdict = await reserveAttempt(bucket, PASSPHRASE_MAX_ATTEMPTS, PASSPHRASE_WINDOW_SECONDS);
+  if (!verdict.allowed) {
+    return passphraseForm(v.ok, { throttledSeconds: verdict.retryAfterSeconds });
+  }
 
   const passphrase = form.get("passphrase") || "";
   if (!timingSafeEqualStrings(passphrase, OWNER_PASSPHRASE)) {
     return passphraseForm(v.ok, { badPassphrase: true });
   }
+  // Correct passphrase: release every attempt that led here, so a few
+  // mistypes never carry over into a lockout later in the day.
+  await clearAttempts(bucket);
 
   // jti = unique code id, so the token endpoint can claim it exactly once
   // (single-use) when a KV store is configured.

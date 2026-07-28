@@ -18,6 +18,13 @@ export function kvConfigured(): boolean {
   return client !== null;
 }
 
+// The shared client, for stores other than the single-use code set (see
+// lib/ratelimit.ts). Null when Upstash isn't configured — callers decide
+// how to degrade rather than being handed a client that throws.
+export function getRedis(): Redis | null {
+  return client;
+}
+
 // Atomically claim a one-time key. Returns true the first time a given
 // jti is seen, false on any replay. SET NX is atomic on Redis, so two
 // concurrent token requests for the same code can't both win. The key
