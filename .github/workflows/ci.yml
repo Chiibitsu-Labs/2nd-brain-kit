@@ -1,0 +1,89 @@
+name: CI
+
+# Checks that run on every pull request. Until this existed, nothing in
+# the repo verified anything on a PR — the connector's typecheck was run
+# by hand by whoever happened to remember, and the session hooks, which
+# execute on every Claude Code session in every deployed vault, were not
+# tested at all.
+#
+# `pull_request`, never `pull_request_target`: the latter runs with the
+# base repo's secrets against the *head* repo's code, which is the classic
+# way a fork's PR gets to exfiltrate them. Nothing here needs secrets.
+on:
+  pull_request:
+  workflow_dispatch: {}
+
+# Read-only: these jobs check code, they never write to the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  connector:
+    name: vault-mcp — typecheck & audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vault-mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vault-mcp/package-lock.json
+
+      # `npm ci` rather than `npm install`: it installs exactly the
+      # committed lockfile and fails if package.json and the lockfile have
+      # drifted, which is the property that makes the lockfile worth
+      # committing in the first place.
+      - run: npm ci
+
+      - run: npx tsc --noEmit
+
+      # Always print the full advisory picture, then gate.
+      #
+      # The gate is `critical`, not `high`, and that is a deliberate choice
+      # rather than a level picked to make the build pass. As of this
+      # workflow landing there are 6 known advisories (3 moderate, 3 high)
+      # and *none* is fixable from here: `npm audit fix` changes nothing,
+      # because next and mcp-handler are both already at their latest
+      # versions and it is their pinned transitives (postcss, sharp,
+      # @hono/node-server) that carry the advisories. A gate at `high`
+      # would therefore be red from the day it merged, every run, until
+      # upstream ships — and a check that is always red is a check people
+      # stop reading. `critical` is currently 0, so it still means
+      # something when it trips.
+      #
+      # The printed summary above is the part that carries the signal:
+      # when the count moves, it is visible in the log of every PR.
+      - name: npm audit (report)
+        run: npm audit || true
+      - name: npm audit (gate on critical)
+        run: npm audit --audit-level=critical
+
+  hooks:
+    name: session hooks — lint & behaviour
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Syntax check
+        run: bash -n .claude/hooks/*.sh .github/scripts/*.sh
+
+      - name: shellcheck
+        run: shellcheck .claude/hooks/*.sh .github/scripts/*.sh
+
+      # The one that actually matters. Both defects these hooks have
+      # shipped were syntactically valid and behaviourally wrong, so
+      # `bash -n` and shellcheck would have passed them both. This runs
+      # the hook against fixture vaults and asserts on what it emits.
+      - name: Behavioural tests
+        run: .github/scripts/test-improve-hook.sh
