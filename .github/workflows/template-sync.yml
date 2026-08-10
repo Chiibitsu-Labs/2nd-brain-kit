@@ -91,6 +91,12 @@ jobs:
             # create-only: a fix to what the skill may trust or write is
             # worthless if it can only reach vaults deployed after it.
             ".claude/skills/improve/SECURITY.md"
+            # Scripts the CI workflow invokes. These must be force-synced
+            # rather than left to the workflow mechanism below: ci.yml can
+            # only ever arrive by a human paste, and a pasted ci.yml whose
+            # test script is missing fails on arrival. Delivering the
+            # script first means the paste lands on something that runs.
+            ".github/scripts"
             ".gitignore"
             "BACKUP.md"
             "vault-mcp"
@@ -135,6 +141,7 @@ jobs:
             ".github/workflows/backup-snapshot.yml"
             ".github/workflows/backup-mirror.yml"
             ".github/workflows/template-sync.yml"
+            ".github/workflows/ci.yml"
           )
           PENDING=".github/PENDING_WORKFLOW_UPDATE.md"
           TMP_BODY=$(mktemp)
