@@ -168,6 +168,16 @@ OUT="$(run_hook "$V")"
 [[ "$(grep -c "NOTEBODY-" <<<"$OUT")" == "3" ]]; check "3 real notes still loaded alongside it" "$?"
 grep -q "NOTEBODY-2026-08-08-b" <<<"$OUT"; check "no real note evicted by a numeric doc" "$?"
 
+# 12. A date alone is not the documented filename either. SKILL.md writes
+#     YYYY-MM-DD-slug.md, so a dated file with no slug is something else
+#     the owner dropped in — and a future-dated one sorts ahead of every
+#     real note, so admitting it evicts one.
+V="$WORK/slugless"; make_vault "$V" with_security with_index with_notes
+echo "SLUGLESSDOC" > "$V/ai-improvements/2027-01-01.md"
+OUT="$(run_hook "$V")"
+! grep -q "SLUGLESSDOC" <<<"$OUT"; check "slugless dated file not loaded as a note" "$?"
+grep -q "NOTEBODY-2026-08-08-b" <<<"$OUT"; check "no real note evicted by a slugless date" "$?"
+
 echo
 echo "passed: $PASS  failed: $FAIL"
 [[ "$FAIL" -eq 0 ]]

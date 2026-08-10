@@ -75,11 +75,34 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
-      - name: Syntax check
-        run: bash -n .claude/hooks/*.sh .github/scripts/*.sh
-
-      - name: shellcheck
-        run: shellcheck .claude/hooks/*.sh .github/scripts/*.sh
+      # One step, one glob expansion, so the "what if the directory isn't
+      # there yet" question is answered in a single place.
+      #
+      # nullglob matters: a vault that pasted ci.yml before a sync
+      # delivered .github/scripts has no such directory, so without it
+      # bash hands the unexpanded literal ".github/scripts/*.sh" to
+      # shellcheck, which fails on a nonexistent path — turning the first
+      # CI run in that vault red before the tolerant behavioural step
+      # further down ever gets to explain itself.
+      - name: Lint shell scripts
+        run: |
+          shopt -s nullglob
+          files=(.claude/hooks/*.sh .github/scripts/*.sh)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::warning::No shell scripts found to lint."
+            exit 0
+          fi
+          printf 'Linting %d script(s):\n' "${#files[@]}"
+          printf '  %s\n' "${files[@]}"
+          rc=0
+          # `bash -n a.sh b.sh` parses only a.sh and passes the rest as
+          # positional arguments, exiting 0 however broken they are — so
+          # this has to loop, one file per invocation.
+          for f in "${files[@]}"; do
+            bash -n "$f" || rc=1
+          done
+          shellcheck "${files[@]}" || rc=1
+          exit $rc
 
       # The one that actually matters. Both defects these hooks have
       # shipped were syntactically valid and behaviourally wrong, so

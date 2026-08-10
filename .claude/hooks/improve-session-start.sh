@@ -152,15 +152,15 @@ if [[ -d "$ENTRIES_DIR" ]]; then
   # checkout doesn't preserve original write times, so anything time-based
   # can surface arbitrary files instead of the most recently dated notes.
   #
-  # Match the full YYYY-MM-DD date shape, not merely a leading digit. The
+  # Match the full YYYY-MM-DD date shape *and* require a non-empty slug
+  # after it, which is the filename SKILL.md says this skill writes. The
   # folder ships with a README.md explaining what it's for, and a bare
-  # *.md glob spent one of the three slots on it every session — but
-  # anchoring on just "[0-9]" reintroduced the same bug one character in:
-  # "9-README.md" starts with a digit and sorts *after* every "2026-..."
-  # name, so it would be picked first and evict a real note. Requiring all
-  # eight date digits is what actually restricts this to notes the skill
-  # wrote, and keeps any other numbered document the owner drops in here
-  # out of the context.
+  # *.md glob spent one of the three slots on it every session — but each
+  # loosening of the pattern reintroduced the same bug one character
+  # further in: "[0-9]" also matched "9-README.md", and requiring only
+  # the date still matched a slugless "2027-01-01.md". Both sort after
+  # real entries and would evict one. The trailing "-?*" is what makes
+  # the guarantee match the documented shape rather than approximate it.
   #
   # Collect via the glob itself rather than by reading `ls` output: a path
   # is not a line of text, and a common Obsidian vault path like
@@ -168,7 +168,7 @@ if [[ -d "$ENTRIES_DIR" ]]; then
   # already sorted ascending, so walking it backwards yields the newest
   # first without a subshell, a sort, or any word-splitting.
   shopt -s nullglob
-  entries=("$ENTRIES_DIR"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*.md)
+  entries=("$ENTRIES_DIR"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-?*.md)
   shopt -u nullglob
   files=()
   for (( i=${#entries[@]}-1; i>=0 && ${#files[@]}<3; i-- )); do
