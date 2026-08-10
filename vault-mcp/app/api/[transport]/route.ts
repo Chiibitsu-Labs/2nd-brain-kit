@@ -43,6 +43,10 @@ const MANDATORY_PROTECTED_PREFIXES = [
   // as .claude/: files a human never re-reads that something executes.
   ".vscode/",
   ".devcontainer/",
+  // Codex reads .codex/config.toml for trusted-repository settings —
+  // sandbox policy, MCP servers, hooks — so it configures what runs in a
+  // later session just as surely as a hook script does.
+  ".codex/",
 ];
 
 // Files that are loaded *as instructions* by an agent reading this vault,
