@@ -55,8 +55,31 @@ const PROTECTED_ROOT_FILES = new Set([
   ".gitignore",
 ]);
 
-function writeBlockReason(rawPath: string): string | null {
-  const posixInput = rawPath.replace(/\\/g, "/");
+// The one path boundary, shared by read_file, list_files AND write_file.
+//
+// It used to be write-only, and that asymmetry was the bug: read_file and
+// list_files handed raw input straight to the URL builder, and since
+// encodeURIComponent leaves "." alone, the WHATWG URL parser inside fetch
+// resolved the ".." segments itself and walked the request out of this
+// repo's contents/ endpoint onto arbitrary api.github.com endpoints —
+// ".../contents/../../../../user" resolves to "api.github.com/user" —
+// each one still carrying VAULT_GITHUB_TOKEN. A single-repo fine-grained
+// token capped the damage, but the "this connector only manages notes"
+// boundary the write side enforces simply wasn't there on the read side.
+// A guard on one verb is not a boundary, so all three resolve here now
+// and write_file layers its protected-prefix checks on top.
+//
+// Returns the resolved path to *use*, not just a verdict: the caller must
+// build its GitHub URL from this value, or a path that passed the checks
+// in one form can still be sent to GitHub in another.
+// Discriminated on `ok` rather than on the presence of `error`: an error
+// string is allowed to be empty as far as the type system is concerned, so
+// `if (result.error)` narrows nothing under `strict` and a caller could
+// reach for `.path` on a rejected path without the compiler objecting.
+type ResolvedPath = { ok: true; path: string } | { ok: false; error: string };
+
+function resolveVaultPath(rawPath: string, { allowRoot = false } = {}): ResolvedPath {
+  const posixInput = String(rawPath ?? "").replace(/\\/g, "/");
   // nodePath.posix.normalize collapses *every* "." segment and resolves
   // ".." against a preceding real segment, unlike a single-pass regex
   // strip — a crafted path like "././.claude/x" left a leading "./"
@@ -64,18 +87,47 @@ function writeBlockReason(rawPath: string): string | null {
   // prefix check below even though GitHub's own path resolution collapses
   // it right back to the real protected file, bypassing the guard
   // entirely.
-  let norm = nodePath.posix.normalize(posixInput).replace(/^\/+/, "");
+  let norm = nodePath.posix.normalize(posixInput);
+  // normalize() preserves a trailing slash, and collapses "a/../" to "./"
+  // rather than "." — so strip trailing slashes before the root/emptiness
+  // checks below, or "./" and "notes/../" slip through as *non-empty*
+  // paths that GitHub then resolves back to the repo root anyway. Guarded
+  // on length so a bare "/" stays absolute and is refused as such rather
+  // than becoming "".
+  if (norm.length > 1) norm = norm.replace(/\/+$/, "");
   if (norm === ".") norm = "";
-  if (!norm) return "path is empty";
-  if (norm === ".." || norm.startsWith("../")) return "path traversal is not allowed";
+  // An absolute path is refused rather than quietly rewritten. The old
+  // write guard stripped the leading slash before its checks, so "/x" was
+  // *checked* as "x" but then sent to GitHub as "contents//x" — a
+  // different path, which 404s and reads back to the owner as a missing
+  // note. Saying "give me a relative path" is the honest answer, and it
+  // keeps the checked string and the fetched string identical.
+  // (normalize() has already resolved any ".." against the root here, so
+  // an absolute path can no longer escape by that route either.)
+  if (norm.startsWith("/")) {
+    return { ok: false, error: "path must be relative to the vault root, with no leading '/'" };
+  }
+  if (norm === ".." || norm.startsWith("../")) return { ok: false, error: "path traversal is not allowed" };
+  // Only list_files may ask for the vault root ("" or "."); a read or a
+  // write with no path is a mistake worth naming rather than a request
+  // for the repository root.
+  if (!norm) return allowRoot ? { ok: true, path: "" } : { ok: false, error: "path is empty" };
+  return { ok: true, path: norm };
+}
+
+// Write-only checks, layered on top of resolveVaultPath — notes may live
+// anywhere in the vault, but never in the deployment's own footprint.
+// Takes an already-resolved path, so it can never be handed a "."- or
+// ".."-laden variant of a protected path.
+function protectedWriteReason(norm: string): string | null {
   // Case-fold only for the protection checks below, never for the actual
-  // write (callers keep using the original-case `path`/`norm`-adjacent
-  // value elsewhere). GitHub's own repo storage is case-sensitive, but a
-  // checkout onto a case-insensitive filesystem (macOS/Windows default)
-  // can alias ".CLAUDE/..." onto the real ".claude/..." on disk — a
-  // case-sensitive comparison here could be bypassed by writing an
-  // upper/mixed-case variant of a protected path that still lands on (or
-  // collides with) the real file once a human checks the repo out.
+  // write (the commit uses the resolved, original-case path). GitHub's own
+  // repo storage is case-sensitive, but a checkout onto a case-insensitive
+  // filesystem (macOS/Windows default) can alias ".CLAUDE/..." onto the
+  // real ".claude/..." on disk — a case-sensitive comparison here could be
+  // bypassed by writing an upper/mixed-case variant of a protected path
+  // that still lands on (or collides with) the real file once a human
+  // checks the repo out.
   const normLower = norm.toLowerCase();
   if (PROTECTED_ROOT_FILES.has(normLower)) return `'${norm}' is a protected config file`;
   for (const pre of PROTECTED_PREFIXES) {
@@ -485,7 +537,15 @@ class VaultUnreachable extends Error {}
 // checked write access. The diagnosis has a caveat for exactly that case;
 // it was simply unreachable from the one path that needs it.
 async function ghGetPath(path: string, operation: "read" | "write" = "read") {
-  const cleanPath = path === "." ? "" : path;
+  // Re-resolve at the chokepoint instead of trusting the caller. Every tool
+  // resolves before it gets here and reports a friendlier message, so this
+  // should be unreachable — it exists so a *future* caller that forwards raw
+  // input can't quietly reintroduce the traversal in the one function that
+  // builds the GitHub URL. allowRoot, because a bare contents/ listing is the
+  // legitimate vault-root read.
+  const resolved = resolveVaultPath(path, { allowRoot: true });
+  if (!resolved.ok) throw new Error(`Refusing to request '${path}': ${resolved.error}`);
+  const cleanPath = resolved.path;
   // encodeURIComponent on the ref, not raw interpolation: a branch name may
   // legally contain "&" or "#", which would otherwise truncate the query and
   // silently fetch a *different* ref — and then a successful branch probe
@@ -553,7 +613,19 @@ const rawHandler = createMcpHandler(
       async ({ path }) =>
         guard(async () => {
           if (!vaultConfigured()) return notConfigured();
-          const file = await ghGetPath(path);
+          const resolved = resolveVaultPath(path);
+          if (!resolved.ok) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Can't read '${path}': ${resolved.error}. Paths are relative to the vault root, e.g. '00_moc/AI Improvements Index.md'.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          const file = await ghGetPath(resolved.path);
           if (!file || Array.isArray(file)) {
             return {
               content: [
@@ -587,14 +659,21 @@ const rawHandler = createMcpHandler(
       async ({ path, content, message }) =>
         guard(async () => {
           if (!vaultConfigured()) return notConfigured();
-          const blocked = writeBlockReason(path);
+          const resolved = resolveVaultPath(path);
+          if (!resolved.ok) {
+            return {
+              content: [{ type: "text" as const, text: `Refused to write ${path}: ${resolved.error}.` }],
+              isError: true,
+            };
+          }
+          const blocked = protectedWriteReason(resolved.path);
           if (blocked) {
             return {
               content: [{ type: "text" as const, text: `Refused to write ${path}: ${blocked}.` }],
               isError: true,
             };
           }
-          const existing = await ghGetPath(path, "write");
+          const existing = await ghGetPath(resolved.path, "write");
           const body: Record<string, unknown> = {
             message,
             content: Buffer.from(content, "utf-8").toString("base64"),
@@ -602,7 +681,7 @@ const rawHandler = createMcpHandler(
           };
           if (existing && !Array.isArray(existing)) body.sha = existing.sha;
           const res = await fetch(
-            `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodePath(path)}`,
+            `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodePath(resolved.path)}`,
             { method: "PUT", headers: ghHeaders(), body: JSON.stringify(body) }
           );
           if (!res.ok) {
@@ -646,7 +725,9 @@ const rawHandler = createMcpHandler(
               isError: true,
             };
           }
-          return { content: [{ type: "text" as const, text: `Committed ${path} to ${BRANCH}` }] };
+          // Report the path actually committed, not the raw request: if the
+          // caller sent "notes/./x.md", "notes/x.md" is where the note is.
+          return { content: [{ type: "text" as const, text: `Committed ${resolved.path} to ${BRANCH}` }] };
         })
     );
 
@@ -661,7 +742,21 @@ const rawHandler = createMcpHandler(
       async ({ path }) =>
         guard(async () => {
           if (!vaultConfigured()) return notConfigured();
-          const listing = await ghGetPath(path);
+          // allowRoot: '' and '.' are this tool's documented way to ask for
+          // the vault root, and stay supported.
+          const resolved = resolveVaultPath(path, { allowRoot: true });
+          if (!resolved.ok) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Can't list '${path}': ${resolved.error}. Paths are relative to the vault root — pass '' or '.' for the root itself.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          const listing = await ghGetPath(resolved.path);
           if (!listing) {
             return {
               content: [
