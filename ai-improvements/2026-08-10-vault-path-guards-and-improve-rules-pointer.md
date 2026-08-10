@@ -77,6 +77,25 @@ tags: [ai-improvement, mistake, preference, friction, decision]
   output to pick recent notes. The surrounding comment had already
   worried in prose about spaces in Obsidian vault paths like
   `My Vault/`, while the code directly under it still parsed `ls`.
+- The fixture blind spot recurred, and that is the finding rather than
+  the bug. The inline-rules fallback had been verified across three vault
+  states — deployed, synced, fresh — but every fixture ran with `jq`
+  installed, because the machine building them had it. `jq` ships on
+  neither macOS nor Windows, and the hook exited before reaching the
+  rules when it was absent, so the fallback written specifically for
+  already-deployed vaults reached nothing on exactly the platforms most
+  likely to be one. This is the second time in the same session that a
+  test environment quietly supplied a precondition the real world does
+  not: first `SECURITY.md` copied into place by the fixture builder, then
+  `jq` present on the test machine. Both times the tests passed and the
+  feature was dead where it mattered.
+- The tightened note glob was itself a regression, introduced one round
+  earlier in this same branch as the fix for the README bug. Anchoring on
+  `[0-9]` instead of the full date shape let `9-README.md` back in — and
+  because it sorts after every `2026-…` name it was picked first, so the
+  narrower fix reproduced the original bug rather than a milder version
+  of it. Fixing a class of bug by tightening a pattern invites checking
+  whether the new pattern still admits the same class.
 - The security audit that drove much of this was itself wrong on one
   checkable point: it described all six dependency advisories as
   transitive through `next`, when three come through
@@ -88,13 +107,19 @@ tags: [ai-improvement, mistake, preference, friction, decision]
 ## Preferences
 
 - The owner stated that pull requests here follow the "vibeOS protocol":
-  a Codex review, iterated until twice clean, then mark ready for review,
-  twice clean again, then merge — and that they drive those state
-  transitions themselves rather than having them done for them. They said
-  they had already handled #5 that way manually. Read as: the PR's
-  draft/ready/merge state is the owner's to move, and review rounds are
-  expected to repeat until two consecutive clean passes, not merged on
-  the first green.
+  a Codex review iterated until twice clean, then mark ready for review,
+  twice clean again, then merge. First described while saying they had
+  handled #5 that way manually, which was initially read as "the owner
+  moves these states themselves". They then corrected that: the
+  assistant should drive the loop — request each Codex round, fix what
+  comes back, and keep going until the gate is open — rather than waiting
+  to be asked each time. The correction is the useful part: describing
+  how something was done once is not the same as saying it must keep
+  being done that way, and the first reading assumed it was.
+- A green CI run and a clean review round were treated as different
+  claims from "the code is correct", and the owner did not object to that
+  framing. Every review round on #5 so far surfaced something real,
+  including in code that had just been written and verified.
 
 ## Workflow friction
 
@@ -159,6 +184,24 @@ tags: [ai-improvement, mistake, preference, friction, decision]
   runs a behavioural fixture suite rather than only `bash -n` and
   shellcheck, on the evidence that every defect these hooks have shipped
   was syntactically valid.
+- The hook's dependency on `jq` was split rather than removed: the
+  rules, being this script's own static text, are escaped in pure bash
+  and always emitted, while note bodies still require `jq`. Hand-rolled
+  escaping of arbitrary file content is its own bug factory, so the
+  dependency was kept exactly where the content is untrusted and dropped
+  where it is not. Losing notes to a missing helper is an inconvenience;
+  losing the rules is a security hole.
+- `agents.override.md` was added to the protected set even though its
+  claimed precedence over `AGENTS.md` could not be verified from here.
+  The asymmetry decided it: no legitimate note carries that name, so a
+  wrong entry costs nothing, while a missing one reopens the whole path.
+  The unverified status was stated in the commit and on the PR rather
+  than presented as confirmed.
+- The CI script is force-synced while the workflow that calls it can only
+  arrive by human paste, and that ordering is deliberate: the script
+  lands first, so a pasted `ci.yml` runs instead of failing on a missing
+  file. Same delivery trap as the SECURITY.md one — a change to what gets
+  delivered cannot deliver itself.
 - Waiting on CI by backgrounding a shell loop of `sleep` calls was the
   wrong instrument — it produced no signal and had to be stopped. Polling
   the checks directly answered it in one call.
