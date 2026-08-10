@@ -227,10 +227,16 @@ tags: [ai-improvement, mistake, preference, friction, decision]
   The unverified status was stated in the commit and on the PR rather
   than presented as confirmed.
 - The CI script is force-synced while the workflow that calls it can only
-  arrive by human paste, and that ordering is deliberate: the script
+  arrive by human paste, and the intended ordering is that the script
   lands first, so a pasted `ci.yml` runs instead of failing on a missing
-  file. Same delivery trap as the SECURITY.md one — a change to what gets
-  delivered cannot deliver itself.
+  file. That ordering is not guaranteed for a vault deployed before this
+  change: its *old* sync workflow has no force-sync entry for the script,
+  so the first run can advertise the new `ci.yml` without being able to
+  deliver the script it calls, and an owner who pastes promptly gets CI
+  before the script. Same delivery trap as the SECURITY.md one — a change
+  to what gets delivered cannot deliver itself — which is why both CI
+  steps that touch the script tolerate its absence rather than assuming
+  the ordering held.
 - Waiting on CI by backgrounding a shell loop of `sleep` calls was the
   wrong instrument — it produced no signal and had to be stopped. Polling
   the checks directly answered it in one call.
@@ -246,3 +252,10 @@ tags: [ai-improvement, mistake, preference, friction, decision]
   first and failed the second. Simulating a vault with an owner-authored
   script beside the kit's is what showed the directory replace deleting
   it; reading the loop had not.
+- The note-selection glob was tightened three times, and each near-miss
+  taught the same thing: `*.md` admitted `README.md`, `[0-9]*.md`
+  admitted `9-README.md`, and the full date without a slug admitted
+  `2027-01-01.md`. Every one of them sorted after the real entries and
+  evicted a note. Approximating the documented filename kept leaving a
+  gap one character further in; matching what `SKILL.md` actually
+  specifies — date, separator, non-empty slug — is what closed it.
