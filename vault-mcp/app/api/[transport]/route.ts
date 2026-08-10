@@ -76,6 +76,7 @@ const PROTECTED_BASENAMES = new Set([
   "claude.md",
   "claude.local.md",
   "agents.md",
+  "agents.override.md",
   ".mcp.json",
   ".devcontainer.json",
 ]);
