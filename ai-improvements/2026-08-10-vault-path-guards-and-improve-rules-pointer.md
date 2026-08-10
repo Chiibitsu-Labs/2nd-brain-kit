@@ -25,6 +25,16 @@ tags: [ai-improvement, mistake, friction, decision]
   case-insensitive-checkout alias. It did — but the comment's framing
   obscured that two other spellings of the same file were still
   unprotected (trailing dots/spaces, and a missing `next.config.ts`).
+- The same drift pattern showed up a second time later in the session,
+  and again only under execution. The recent-entries loader globbed every
+  `*.md` in `ai-improvements/`, so the folder's own `README.md` was being
+  read in as if it were a note — visible the moment the hook ran against
+  the real vault after the first note existed, and invisible in review
+  beforehand. In the descending sort the loader already used, `README.md`
+  outranks every `2026-…` filename, so it held one of the three slots in
+  every session and would have started silently dropping the oldest real
+  note once three existed. Both defects this session were found by
+  running the thing, not by reading it.
 
 ## Workflow friction
 
@@ -34,6 +44,11 @@ tags: [ai-improvement, mistake, friction, decision]
   through `git log` and the branch name before anything could be
   committed. Committing each logical change when it was finished would
   have avoided the ambiguity.
+- Scheduling the follow-up check-in on PR #5 failed: the `send_later`
+  tool needs interactive approval, which a non-interactive remote session
+  can't obtain. The PR was left green and conflict-free but with nothing
+  arranged to re-check it, since webhooks don't reliably deliver CI
+  success or merge-conflict transitions.
 
 ## Decisions
 

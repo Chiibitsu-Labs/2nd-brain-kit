@@ -5,4 +5,4 @@ repeating, standing preferences, workflow friction, and decisions and
 their reasoning. Written by the `improve` skill and auto-loaded back into
 future sessions by `.claude/hooks/improve-session-start.sh`.
 
-- [[2026-08-10-vault-path-guards-and-improve-rules-pointer]] — security rules shipped as a file nothing referenced; path guards matched spelling rather than how paths resolve (2026-08-10)
+- [[2026-08-10-vault-path-guards-and-improve-rules-pointer]] — security rules shipped as a file nothing referenced, the notes loader read its own README as a note, and path guards matched spelling rather than how paths resolve (2026-08-10)
