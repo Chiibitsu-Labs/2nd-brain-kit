@@ -131,14 +131,16 @@ tags: [ai-improvement, mistake, preference, friction, decision]
   rather than one, since they are independent changes that happened to
   share a working tree.
 - Of the audit's five findings, two were fixed on the branch and three
-  were left. The split was drawn on whether the finding was a defect in a
-  claim the PR itself made — the undelivered rules and the writable
-  `CLAUDE.md`, both fixed — versus a standing policy decision: adding PR
-  CI, committing a lockfile that is deliberately gitignored, and scoping
-  a workflow token. The owner was asked about those three and the
-  question went unanswered, so they were left untouched rather than
-  decided unilaterally. They interlock: the proposed CI runs `npm ci`,
-  which needs the committed lockfile to exist first.
+  were initially left — **superseded later the same day; see the entry
+  below, all five ended up done.** The split was drawn on whether the
+  finding was a defect in a claim the PR itself made — the undelivered
+  rules and the writable `CLAUDE.md`, both fixed — versus a standing
+  policy decision: adding PR CI, committing a lockfile that is
+  deliberately gitignored, and scoping a workflow token. The owner was
+  asked about those three and the question initially went unanswered, so
+  they were held rather than decided unilaterally. They interlock: the
+  proposed CI runs `npm ci`, which needs the committed lockfile to exist
+  first.
 - The audit's findings were re-derived by execution before any were
   acted on, rather than accepted from the report. All five reproduced.
   One detail in it did not survive contact: it proposed `bash -n` in CI
