@@ -103,6 +103,35 @@ tags: [ai-improvement, mistake, preference, friction, decision]
   had separately flagged `mcp-handler` as deserving attention while
   attributing its advisories elsewhere. Reports worth acting on are still
   worth re-deriving.
+- The worst defect of the session was in the guard written to close the
+  earlier ones. `protectionKey()` folded trailing dots and spaces so the
+  comparison would match how Windows spells a filename — but a component
+  like `.. ` sits between two path languages: POSIX reads it as an
+  ordinary folder named "dot dot space" and leaves it alone, while Win32
+  strips the trailing space and opens the *parent*. So
+  `notes/.. /.claude/hooks/x.sh` passed every check and resolved to the
+  real auto-run hook on a Windows checkout, and `notes/.. /package.json`
+  reached the deploy config the same way. Both reproduced before fixing.
+- The fold did not merely miss that case, it *created* it: `.. ` folds to
+  the empty string, so the compared path became `notes//.claude/...`,
+  which matches no protected prefix at all. A normalizer added for
+  comparison widened the hole it was meant to close. The mistake was
+  conceptual rather than a missed entry — folding a name is not resolving
+  it, and the question that decides which file opens is resolution. The
+  fix refuses such segments outright at `resolveVaultPath`, which also
+  covers reads and lists rather than only writes.
+- The CI-delivery change was wrong three consecutive times, each a layer
+  below the previous fix: the force-sync list could not deliver itself,
+  then the copy step wrote a file it never staged so the fix was inert,
+  then the copy step used a directory-wide replace that would have
+  deleted an owner's own scripts. Each was verified at the layer being
+  changed and broken at the next one down.
+- The directory-replace instance is the least excusable. The workflow's
+  own comment states that nothing does a directory-wide replace anymore,
+  precisely so a client's files are never touched — a comment read,
+  quoted in a commit message earlier the same session, and then
+  contradicted three lines above it. Reading a comment is not the same as
+  checking a change against what it says.
 
 ## Preferences
 
@@ -205,3 +234,15 @@ tags: [ai-improvement, mistake, preference, friction, decision]
 - Waiting on CI by backgrounding a shell loop of `sleep` calls was the
   wrong instrument — it produced no signal and had to be stopped. Polling
   the checks directly answered it in one call.
+- The behavioural-test step in CI skips when its script is missing rather
+  than failing, because a vault that pastes `ci.yml` before a sync has
+  delivered the script would otherwise go red for something its owner
+  neither caused nor could fix. The skip is deliberately loud — a
+  `::warning::` saying the suite did not run — on the reasoning that a
+  silent skip is exactly how a deleted test suite becomes a green build.
+  Visibly incomplete was preferred to quietly passing.
+- Verification moved from inspecting the changed line to simulating the
+  mechanism end to end, after three delivery fixes in a row passed the
+  first and failed the second. Simulating a vault with an owner-authored
+  script beside the kit's is what showed the directory replace deleting
+  it; reading the loop had not.
