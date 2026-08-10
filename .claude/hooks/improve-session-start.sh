@@ -78,10 +78,17 @@ if [[ -d "$ENTRIES_DIR" ]]; then
   # Read into an array via `while read`, not `for f in $(...)` — unquoted
   # command substitution word-splits on whitespace, which breaks on a
   # common Obsidian vault path like ".../My Vault/ai-improvements/...".
+  # Match only dated note filenames (YYYY-MM-DD-slug.md), not every *.md
+  # in the folder. The folder ships with a README.md explaining what it's
+  # for, and in a descending ASCII sort "README.md" outranks every
+  # "2026-..." name — so a bare *.md glob spent one of the three slots on
+  # the README in every session, and once three real notes existed it
+  # silently pushed the oldest of them out. Anchoring on a leading digit
+  # also keeps any other prose the owner drops in here out of the context.
   files=()
   while IFS= read -r f; do
     files+=("$f")
-  done < <(ls "$ENTRIES_DIR"/*.md 2>/dev/null | sort -r | head -3)
+  done < <(ls "$ENTRIES_DIR"/[0-9]*.md 2>/dev/null | sort -r | head -3)
   for f in "${files[@]}"; do
     RECENT_CONTENT+=$'\n\n---\n\n'
     RECENT_CONTENT+=$(cat "$f")
