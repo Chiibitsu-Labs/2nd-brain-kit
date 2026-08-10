@@ -62,10 +62,22 @@ const MANDATORY_PROTECTED_PREFIXES = [
 // SECURITY.md §2 sends the owner's standing instructions to CLAUDE.md
 // precisely because it's the human-authored, diff-reviewable channel.
 // That's only true if this connector cannot write it.
+// Each entry is a *supported spelling* of one of these files, not a
+// variant of one name — Claude Code loads CLAUDE.local.md as project-local
+// instructions in its own right, and a dev container is configured by
+// either .devcontainer/devcontainer.json (covered by the prefix above) or
+// a root .devcontainer.json, which the prefix does not cover. Both carry
+// the same consequence as the name beside them: instructions loaded
+// verbatim, and lifecycle commands (initializeCommand, postCreateCommand)
+// run on container build. Missing a spelling reopens the whole path, so
+// these track what the tools actually accept rather than what looks
+// canonical.
 const PROTECTED_BASENAMES = new Set([
   "claude.md",
+  "claude.local.md",
   "agents.md",
   ".mcp.json",
+  ".devcontainer.json",
 ]);
 const EXTRA_PROTECTED_PREFIXES = process.env.VAULT_PROTECTED_PREFIXES
   ? process.env.VAULT_PROTECTED_PREFIXES.split(",")
