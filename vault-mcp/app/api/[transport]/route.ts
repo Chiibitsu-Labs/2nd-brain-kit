@@ -38,7 +38,35 @@ const MANDATORY_PROTECTED_PREFIXES = [
   "tools/",
   ".claude/",
   ".obsidian/plugins/",
+  // Editor-managed folders that run commands on open or on container
+  // build. They aren't server code, but they're the same class of thing
+  // as .claude/: files a human never re-reads that something executes.
+  ".vscode/",
+  ".devcontainer/",
 ];
+
+// Files that are loaded *as instructions* by an agent reading this vault,
+// wherever in the tree they sit — checked by basename, not just at the
+// root, because Claude Code picks up memory files from subdirectories
+// too, so blocking only "CLAUDE.md" would leave "notes/CLAUDE.md" open.
+//
+// This closes the gap that made the untrusted-note fence in
+// .claude/hooks/improve-session-start.sh bypassable by filename. Fencing
+// note bodies is worth doing, but the same write privilege that reaches
+// ai-improvements/*.md also reached CLAUDE.md, which is injected into
+// every session verbatim, unfenced, and with no untrusted-content
+// warning — so an attacker could simply pick the file that isn't fenced.
+// .mcp.json is worse in kind than the memory files: it declares MCP
+// servers by command and args, i.e. local process launch.
+//
+// SECURITY.md §2 sends the owner's standing instructions to CLAUDE.md
+// precisely because it's the human-authored, diff-reviewable channel.
+// That's only true if this connector cannot write it.
+const PROTECTED_BASENAMES = new Set([
+  "claude.md",
+  "agents.md",
+  ".mcp.json",
+]);
 const EXTRA_PROTECTED_PREFIXES = process.env.VAULT_PROTECTED_PREFIXES
   ? process.env.VAULT_PROTECTED_PREFIXES.split(",")
   : [];
@@ -147,6 +175,13 @@ function protectionKey(p: string): string {
 function protectedWriteReason(norm: string): string | null {
   const normLower = protectionKey(norm);
   if (PROTECTED_ROOT_FILES.has(normLower)) return `'${norm}' is a protected config file`;
+  // Basename check, so a memory file is caught at any depth. protectionKey
+  // has already folded case and trailing dots/spaces, so the segment it
+  // yields is the one the filesystem will actually open.
+  const base = normLower.slice(normLower.lastIndexOf("/") + 1);
+  if (PROTECTED_BASENAMES.has(base)) {
+    return `'${norm}' is loaded as instructions by agents reading this vault; this connector only manages notes`;
+  }
   for (const pre of PROTECTED_PREFIXES) {
     const p = (pre.endsWith("/") ? pre : pre + "/").toLowerCase();
     if (normLower === p.slice(0, -1) || normLower.startsWith(p)) {
