@@ -141,6 +141,14 @@ across both.
 |---|---|---|---|
 | 1 | `0a6a21c` | `52a782b` | Clean — no major issues |
 | 2 | `39a0205` | `52a782b` | Clean — no major issues |
+| 3 | `ef2851a` | `52a782b` | Clean — no major issues (confirming pass) |
+
+Pass 3 was requested by the founder and is the one that makes the gate
+unarguable. Passes 1 and 2 opened it, but three record-keeping commits
+landed after them, and doc 04 grants the session-record exemption for one
+landing after a clean pass — so resting the gate on that exemption
+stretched twice would have been a weaker claim than simply reviewing the
+real head. It cost one review cycle and removed the argument.
 
 Both SHA pairs are recorded here rather than only in the thread, because
 a PR shows the *current* target tip and never the one a past review ran
@@ -168,8 +176,32 @@ twice and fail a third look. What carries weight here is Tier 1 (green at
 `39a0205`), the behavioural suite, and the founder's judgment. The merge
 decision is the founder's.
 
-### Deferred to the founder
+### The one deferral, now routed
 
-One item needs a routing decision and is not resolved by this gate: the
-`req.json()` deferral (F-5b above). It is safe to ship — the request is
-rejected either way — but it should not be lost.
+F-5b (`req.json()` outside a `try`) is fixed in **PR #6**, branched from
+`main` rather than added here, so this PR's audited diff stays frozen
+where this pack records it. Investigating it surfaced two more faults in
+the same block: a JSON array body also threw, and a JSON *string* body
+was coerced and re-parsed as a query, so the declared content type was
+not actually enforced. No security property changed — the PKCE,
+signature, `redirect_uri` and single-use checks gate every request either
+way.
+
+Merge order matters: #6 currently runs only the mirror job, because the
+CI workflow is part of *this* PR and has not reached `main`. Merging this
+one first, then updating #6, is what puts #6 under the Tier 1 gates.
+
+### State at the close of this audit
+
+- Tier 1: green at `ef2851a` — typecheck, dependency audit, shell lint,
+  28-case behavioural suite, mirror.
+- Tier 2: 3 findings, all fixed.
+- Tier 3: 21 findings across 6 rounds — 20 fixed, 0 disputed, 1 deferred
+  and now routed to #6.
+- PR review gate: open, 3 clean passes, target tip unmoved throughout.
+- Tier 4: not run. It is the pre-launch pass, and this change does not
+  yet face real users or real money. It becomes due before this kit ships
+  to a client vault.
+
+This is the last commit intended before merge; anything after it reopens
+the gate.
