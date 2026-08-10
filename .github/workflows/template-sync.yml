@@ -1,14 +1,21 @@
 name: Vault template sync — pull kit updates
 
 # Periodically pulls the "kit infrastructure" files — .claude/settings.json,
-# the two hooks, .gitignore, BACKUP.md, and the vault-mcp connector code —
-# from the canonical template repo and opens a PR here so you can review
-# before merging. .claude/skills/improve/SKILL.md is delivered once and
-# then left alone, since its own "Customize me" section explicitly invites
-# editing it. Never auto-merges, and never touches anything else: your
-# notes, daily/, 00_moc/, ai-improvements/, README.md, any extra skill or
-# hook you've added under .claude/, and any workflow you've added yourself
-# are all untouched.
+# the two hooks, .claude/skills/improve/SECURITY.md, .gitignore, BACKUP.md,
+# and the vault-mcp connector code — from the canonical template repo and
+# opens a PR here so you can review before merging. Never auto-merges, and
+# never touches anything else: your notes, daily/, 00_moc/,
+# ai-improvements/, README.md, any extra skill or hook you've added under
+# .claude/, and any workflow you've added yourself are all untouched.
+#
+# The improve skill is split across two files on purpose.
+# .claude/skills/improve/SKILL.md is delivered once and then left alone,
+# since its own "Customize me" section explicitly invites editing it — but
+# that also means nothing written there can ever be corrected in a vault
+# that's already been deployed. So the rules that must be correctable —
+# what the skill may trust, write, and commit — live in SECURITY.md
+# alongside it, which IS force-synced, and SKILL.md points at it as the
+# authority. Editing SECURITY.md locally won't stick; customize SKILL.md.
 #
 # This is how fixes like security patches reach vaults that were already
 # deployed via the button before the fix shipped, without you having to
@@ -79,6 +86,23 @@ jobs:
             ".claude/settings.json"
             ".claude/hooks/improve-session-start.sh"
             ".claude/hooks/improve-stop-nudge.sh"
+            # Security rules for the improve skill. Force-synced even
+            # though it sits inside a skill folder whose SKILL.md is
+            # create-only: a fix to what the skill may trust or write is
+            # worthless if it can only reach vaults deployed after it.
+            ".claude/skills/improve/SECURITY.md"
+            # The script ci.yml invokes. Force-synced rather than left to
+            # the workflow mechanism below: ci.yml can only ever arrive by
+            # a human paste, and a pasted ci.yml whose test script is
+            # missing fails on arrival, so the script has to be here
+            # already when the paste lands.
+            #
+            # Named as the *file*, never the directory. The loop below
+            # does `rm -rf "$p"` before copying, so listing
+            # ".github/scripts" would delete any helper script the owner
+            # keeps there — the exact directory-wide replace this workflow
+            # removed elsewhere so a client's own files are never touched.
+            ".github/scripts/test-improve-hook.sh"
             ".gitignore"
             "BACKUP.md"
             "vault-mcp"
@@ -101,7 +125,10 @@ jobs:
           # missing entirely (a vault that predates this file, or it got
           # deleted); a client's own extra skills/hooks elsewhere under
           # .claude/ are never touched, since nothing here does a
-          # directory-wide replace anymore.
+          # directory-wide replace anymore. Note this is the *file*, not
+          # the folder: SECURITY.md beside it is force-synced above, which
+          # is what keeps the skill's security rules correctable after a
+          # vault has shipped.
           CREATE_ONLY_PATHS=(
             ".claude/skills/improve/SKILL.md"
           )
@@ -120,6 +147,7 @@ jobs:
             ".github/workflows/backup-snapshot.yml"
             ".github/workflows/backup-mirror.yml"
             ".github/workflows/template-sync.yml"
+            ".github/workflows/ci.yml"
           )
           PENDING=".github/PENDING_WORKFLOW_UPDATE.md"
           TMP_BODY=$(mktemp)
@@ -172,6 +200,18 @@ jobs:
           # set -e, would kill the whole run before it could even report
           # "no changes" or propose unrelated kit updates.
           git add -A -- .github/PENDING_WORKFLOW_UPDATE.md 2>/dev/null || true
+          # Same separate-call treatment, and for the same reason: a vault
+          # that predates the CI workflow has no such file, so folding it
+          # into the pathspec above would abort the whole run on exit 128.
+          # Copying it in FORCE_SYNC_PATHS is not enough on its own — a
+          # file the sync writes but never stages is a file the sync PR
+          # does not carry, which would have left the pasted ci.yml
+          # calling a script that was never committed.
+          #
+          # Staged by exact path, matching what is force-synced: staging
+          # the whole .github/scripts directory would sweep an owner's own
+          # helper scripts into the sync commit.
+          git add -A -- .github/scripts/test-improve-hook.sh 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else

@@ -2,6 +2,11 @@ node_modules
 .next
 .vercel
 *.local
-package-lock.json
+# package-lock.json is deliberately NOT ignored. This connector deploys as
+# a server holding the vault's GitHub token and the OAuth signing secret,
+# so an unpinned tree meant every deploy re-resolved ~124 transitive
+# packages with no diff to review and no reproducible build to compare a
+# bad one against. The lockfile is the only thing that makes a dependency
+# change visible in a pull request.
 next-env.d.ts
 tsconfig.tsbuildinfo
