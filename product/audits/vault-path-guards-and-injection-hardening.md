@@ -74,8 +74,31 @@ Stated plainly, before findings, per doc 04 step 1:
 
 ## Findings and resolutions
 
-Cross-vendor auditor, 16 findings across 5 review rounds. Every one
-answered per doc 04 step 4. **FIXED: 16. DISPUTED: 0. DEFERRED: 0.**
+### Round 0 — independent adversarial audit at `f8931f4`
+
+A session that did not write the code, re-deriving every claim by
+execution. Five findings plus one minor note.
+
+| # | Finding | Resolution |
+|---|---|---|
+| F-1 | HIGH — the security rules reach **zero** already-deployed vaults: `FORCE_SYNC_PATHS` lives in `.github/workflows/template-sync.yml`, which GitHub hard-blocks the Actions token from updating, so adding a force-synced path is the one operation the delivery mechanism cannot perform on itself | **FIXED** `56d5eb3`, `f204cf4` — the hook (already force-synced everywhere) carries the full rules inline when `SECURITY.md` is absent, and without needing `jq` |
+| F-2 | HIGH — the fence is bypassable by filename: the same write privilege that reaches `ai-improvements/*.md` also reached `CLAUDE.md`, loaded into every session unfenced. `SECURITY.md` §2 *directs* standing instructions to `CLAUDE.md`, so both facts could not stand | **FIXED** `f5a1e8b` — basename protection at any depth, plus `.vscode/` and `.devcontainer/` prefixes |
+| F-3 | MEDIUM — no Tier 1 CI existed; nothing was checked on any pull request | **FIXED** `55231e5` — typecheck, audit, shell lint, behavioural suite on `pull_request` |
+| F-4 | MEDIUM — lockfile deliberately gitignored; 124 unpinned transitives re-resolved on every deploy of a server holding four secrets | **FIXED** `0133abc` — lockfile committed, CI uses `npm ci` |
+| F-5 | LOW — `backup-mirror.yml` declared no `permissions:`, inheriting repo default while holding a push token for a second host | **FIXED** `9680b89` — scoped to `contents: read` |
+| F-5b | Minor — `oauth/token/route.ts:10` calls `await req.json()` outside a `try`, so a malformed JSON body yields a 500 instead of a 400 | **DEFERRED** — still present, verified. No security consequence: it is a response-shape difference on a malformed request, and the route rejects the request either way. Deferred because the file is outside this PR's diff and a cosmetic fix here would reset the review gate for the whole security change. Founder's call whether it rides along; it should not be forgotten |
+
+The auditor's own verdicts on the three findings it was asked to check:
+F2 (traversal) **CLOSED**, 0 escapes across 27 vectors; F1 (note
+injection) **MITIGATED, NOT CLOSED** — the fence held mechanically,
+including against a guessed close marker, but F-2 routed around it; F3
+(rules delivery) **STILL OPEN**. F-1 and F-2 above are what closed the
+latter two.
+
+### Round 1–5 — cross-vendor review bot
+
+16 findings across 5 rounds. Every one answered per doc 04 step 4.
+**FIXED: 16. DISPUTED: 0. DEFERRED: 0.**
 
 | # | Finding | Resolution |
 |---|---|---|
