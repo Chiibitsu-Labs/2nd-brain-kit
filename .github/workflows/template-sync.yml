@@ -194,6 +194,14 @@ jobs:
           # set -e, would kill the whole run before it could even report
           # "no changes" or propose unrelated kit updates.
           git add -A -- .github/PENDING_WORKFLOW_UPDATE.md 2>/dev/null || true
+          # Same separate-call treatment, and for the same reason: a vault
+          # that predates the CI workflow has no .github/scripts, so
+          # folding it into the pathspec above would abort the whole run
+          # on exit 128. Copying it in FORCE_SYNC_PATHS is not enough on
+          # its own — a file the sync writes but never stages is a file
+          # the sync PR does not carry, which would have left the pasted
+          # ci.yml calling a script that was never committed.
+          git add -A -- .github/scripts 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
