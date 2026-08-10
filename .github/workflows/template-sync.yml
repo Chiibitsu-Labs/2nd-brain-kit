@@ -91,12 +91,18 @@ jobs:
             # create-only: a fix to what the skill may trust or write is
             # worthless if it can only reach vaults deployed after it.
             ".claude/skills/improve/SECURITY.md"
-            # Scripts the CI workflow invokes. These must be force-synced
-            # rather than left to the workflow mechanism below: ci.yml can
-            # only ever arrive by a human paste, and a pasted ci.yml whose
-            # test script is missing fails on arrival. Delivering the
-            # script first means the paste lands on something that runs.
-            ".github/scripts"
+            # The script ci.yml invokes. Force-synced rather than left to
+            # the workflow mechanism below: ci.yml can only ever arrive by
+            # a human paste, and a pasted ci.yml whose test script is
+            # missing fails on arrival, so the script has to be here
+            # already when the paste lands.
+            #
+            # Named as the *file*, never the directory. The loop below
+            # does `rm -rf "$p"` before copying, so listing
+            # ".github/scripts" would delete any helper script the owner
+            # keeps there — the exact directory-wide replace this workflow
+            # removed elsewhere so a client's own files are never touched.
+            ".github/scripts/test-improve-hook.sh"
             ".gitignore"
             "BACKUP.md"
             "vault-mcp"
@@ -195,13 +201,17 @@ jobs:
           # "no changes" or propose unrelated kit updates.
           git add -A -- .github/PENDING_WORKFLOW_UPDATE.md 2>/dev/null || true
           # Same separate-call treatment, and for the same reason: a vault
-          # that predates the CI workflow has no .github/scripts, so
-          # folding it into the pathspec above would abort the whole run
-          # on exit 128. Copying it in FORCE_SYNC_PATHS is not enough on
-          # its own — a file the sync writes but never stages is a file
-          # the sync PR does not carry, which would have left the pasted
-          # ci.yml calling a script that was never committed.
-          git add -A -- .github/scripts 2>/dev/null || true
+          # that predates the CI workflow has no such file, so folding it
+          # into the pathspec above would abort the whole run on exit 128.
+          # Copying it in FORCE_SYNC_PATHS is not enough on its own — a
+          # file the sync writes but never stages is a file the sync PR
+          # does not carry, which would have left the pasted ci.yml
+          # calling a script that was never committed.
+          #
+          # Staged by exact path, matching what is force-synced: staging
+          # the whole .github/scripts directory would sweep an owner's own
+          # helper scripts into the sync commit.
+          git add -A -- .github/scripts/test-improve-hook.sh 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
