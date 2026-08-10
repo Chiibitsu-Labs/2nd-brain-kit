@@ -174,7 +174,12 @@ tags: [ai-improvement, mistake, preference, friction, decision]
 - The pointer is emitted only when SECURITY.md is actually present on
   disk. A vault whose copy was deleted gets it back on the next template
   sync; until then, pointing at a missing file was judged worse than
-  emitting no pointer.
+  emitting no pointer. — **Superseded later the same day.** Emitting
+  nothing turned out to be the worst of the three options: the vaults
+  that lack SECURITY.md are exactly the already-deployed ones whose own
+  sync workflow cannot deliver it, so "until the next sync" meant never.
+  The hook now carries the full rules inline in that branch and points at
+  the file only where it exists.
 - Path protection now compares a normalized key (per-segment trailing
   dots and spaces stripped, then lowercased) instead of the literal
   spelling, because the Win32 path layer strips trailing dots/spaces and

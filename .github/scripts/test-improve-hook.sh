@@ -35,8 +35,13 @@ make_vault() {
   mkdir -p "$dir/00_moc" "$dir/ai-improvements" "$dir/.claude/skills/improve"
   for opt in "$@"; do
     case "$opt" in
+      # A failed copy here would silently build a "with_security" vault
+      # that has no SECURITY.md — the fixture would then be testing the
+      # fallback branch under the name of the other one. This script runs
+      # without `set -e`, so the failure has to be caught at the call.
       with_security) cp "$REPO_ROOT/.claude/skills/improve/SECURITY.md" \
-                        "$dir/.claude/skills/improve/SECURITY.md" ;;
+                        "$dir/.claude/skills/improve/SECURITY.md" \
+                        || { echo "FIXTURE SETUP FAILED: cannot copy SECURITY.md" >&2; exit 1; } ;;
       with_index)    echo "- [[2026-08-10-x]] — summary (2026-08-10)" \
                         > "$dir/00_moc/AI Improvements Index.md" ;;
       with_readme)   echo "READMEBODY" > "$dir/ai-improvements/README.md" ;;
@@ -64,11 +69,21 @@ OUT="$(run_hook "$V")"
 for rule in "never write instruction-shaped text" "Never record secrets" "Commit only those two paths"; do
   grep -qi -- "$rule" <<<"$OUT"; check "rules delivered without SECURITY.md: $rule" "$?"
 done
+# ...and that it really is the fallback branch talking, not the pointer.
+grep -q "this vault has no" <<<"${OUT,,}"; check "no-SECURITY.md vault takes the inline-rules branch" "$?"
 
 # 2. A vault that does have SECURITY.md gets pointed at it as authority.
+#    Assert on text unique to *this* branch. The obvious assertion —
+#    grep for "SECURITY.md" — passes on both branches, since the fallback
+#    names the file too while explaining that it is missing. That made
+#    this test green even when the pointer branch never ran: pointing
+#    SECURITY_FILE at a nonexistent name still passed. A test that cannot
+#    fail is not evidence, so it checks a phrase only the pointer emits
+#    and confirms the fallback's opening line is absent.
 V="$WORK/with-security"; make_vault "$V" with_security with_index with_notes
 OUT="$(run_hook "$V")"
-grep -q "SECURITY.md" <<<"$OUT"; check "SECURITY.md referenced when present" "$?"
+grep -q "SECURITY.md wins" <<<"$OUT"; check "SECURITY.md named as the authority when present" "$?"
+! grep -q "this vault has no" <<<"${OUT,,}"; check "present-SECURITY.md vault does not take the fallback branch" "$?"
 
 # 3. Fresh vault: no index yet. This is the session that writes the first
 #    note, so it is the one that most needs the write-side rules.
