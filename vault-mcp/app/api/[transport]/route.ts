@@ -47,6 +47,10 @@ const MANDATORY_PROTECTED_PREFIXES = [
   // sandbox policy, MCP servers, hooks — so it configures what runs in a
   // later session just as surely as a hook script does.
   ".codex/",
+  // Repository skills root. A skill is instructions plus, often, scripts
+  // it tells a later session to run — the same trusted channel as an
+  // AGENTS file, just discovered by directory instead of by filename.
+  ".agents/",
 ];
 
 // Files that are loaded *as instructions* by an agent reading this vault,
@@ -129,6 +133,33 @@ type ResolvedPath = { ok: true; path: string } | { ok: false; error: string };
 
 function resolveVaultPath(rawPath: string, { allowRoot = false } = {}): ResolvedPath {
   const posixInput = String(rawPath ?? "").replace(/\\/g, "/");
+  // Refuse any segment built only from dots and spaces — ".. ", ". ",
+  // "...", "   " — before normalize() gets to treat it as an ordinary
+  // directory name.
+  //
+  // This is the seam between two different path languages. POSIX sees
+  // ".. " as a perfectly normal folder called "dot dot space", so
+  // normalize() leaves it alone and the traversal check below never
+  // fires; Win32 strips the trailing space and opens the *parent*. So
+  // "notes/.. /.claude/hooks/x.sh" survives every check here and lands on
+  // the real auto-run hook once a Windows client checks the repo out, and
+  // "notes/.. /package.json" reaches the deploy config the same way.
+  //
+  // protectionKey() below folds these names for comparison, which made
+  // things worse rather than better on its own: ".. " folds to "", so the
+  // path being compared became "notes//.claude/..." — matching no
+  // protected prefix at all. Folding a name is not the same as resolving
+  // it, and the comparison can't be made correct by more folding.
+  //
+  // Refusing is the honest answer: no real note has a component made
+  // exclusively of dots and spaces, a plain "." or ".." is still handled
+  // by normalize() and the traversal check, and refusing here covers
+  // read_file and list_files too rather than only the write guard.
+  for (const seg of posixInput.split("/")) {
+    if (seg !== "." && seg !== ".." && /^[. ]+$/.test(seg)) {
+      return { ok: false, error: "path traversal is not allowed" };
+    }
+  }
   // nodePath.posix.normalize collapses *every* "." segment and resolves
   // ".." against a preceding real segment, unlike a single-pass regex
   // strip — a crafted path like "././.claude/x" left a leading "./"
