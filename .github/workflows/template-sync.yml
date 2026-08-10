@@ -1,14 +1,21 @@
 name: Vault template sync — pull kit updates
 
 # Periodically pulls the "kit infrastructure" files — .claude/settings.json,
-# the two hooks, .gitignore, BACKUP.md, and the vault-mcp connector code —
-# from the canonical template repo and opens a PR here so you can review
-# before merging. .claude/skills/improve/SKILL.md is delivered once and
-# then left alone, since its own "Customize me" section explicitly invites
-# editing it. Never auto-merges, and never touches anything else: your
-# notes, daily/, 00_moc/, ai-improvements/, README.md, any extra skill or
-# hook you've added under .claude/, and any workflow you've added yourself
-# are all untouched.
+# the two hooks, .claude/skills/improve/SECURITY.md, .gitignore, BACKUP.md,
+# and the vault-mcp connector code — from the canonical template repo and
+# opens a PR here so you can review before merging. Never auto-merges, and
+# never touches anything else: your notes, daily/, 00_moc/,
+# ai-improvements/, README.md, any extra skill or hook you've added under
+# .claude/, and any workflow you've added yourself are all untouched.
+#
+# The improve skill is split across two files on purpose.
+# .claude/skills/improve/SKILL.md is delivered once and then left alone,
+# since its own "Customize me" section explicitly invites editing it — but
+# that also means nothing written there can ever be corrected in a vault
+# that's already been deployed. So the rules that must be correctable —
+# what the skill may trust, write, and commit — live in SECURITY.md
+# alongside it, which IS force-synced, and SKILL.md points at it as the
+# authority. Editing SECURITY.md locally won't stick; customize SKILL.md.
 #
 # This is how fixes like security patches reach vaults that were already
 # deployed via the button before the fix shipped, without you having to
@@ -79,6 +86,11 @@ jobs:
             ".claude/settings.json"
             ".claude/hooks/improve-session-start.sh"
             ".claude/hooks/improve-stop-nudge.sh"
+            # Security rules for the improve skill. Force-synced even
+            # though it sits inside a skill folder whose SKILL.md is
+            # create-only: a fix to what the skill may trust or write is
+            # worthless if it can only reach vaults deployed after it.
+            ".claude/skills/improve/SECURITY.md"
             ".gitignore"
             "BACKUP.md"
             "vault-mcp"
@@ -101,7 +113,10 @@ jobs:
           # missing entirely (a vault that predates this file, or it got
           # deleted); a client's own extra skills/hooks elsewhere under
           # .claude/ are never touched, since nothing here does a
-          # directory-wide replace anymore.
+          # directory-wide replace anymore. Note this is the *file*, not
+          # the folder: SECURITY.md beside it is force-synced above, which
+          # is what keeps the skill's security rules correctable after a
+          # vault has shipped.
           CREATE_ONLY_PATHS=(
             ".claude/skills/improve/SKILL.md"
           )
