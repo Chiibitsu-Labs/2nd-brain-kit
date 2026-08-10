@@ -122,23 +122,30 @@ INDEX_CONTENT=$(cat "$INDEX_FILE" 2>/dev/null)
 
 RECENT_CONTENT=""
 if [[ -d "$ENTRIES_DIR" ]]; then
-  # Sort by the YYYY-MM-DD-prefixed filename, not mtime — a fresh clone or
-  # checkout doesn't preserve original write times, so `ls -t` can surface
-  # arbitrary files instead of the most recently dated notes.
-  # Read into an array via `while read`, not `for f in $(...)` — unquoted
-  # command substitution word-splits on whitespace, which breaks on a
-  # common Obsidian vault path like ".../My Vault/ai-improvements/...".
+  # Order by the YYYY-MM-DD-prefixed filename, not mtime — a fresh clone or
+  # checkout doesn't preserve original write times, so anything time-based
+  # can surface arbitrary files instead of the most recently dated notes.
+  #
   # Match only dated note filenames (YYYY-MM-DD-slug.md), not every *.md
   # in the folder. The folder ships with a README.md explaining what it's
-  # for, and in a descending ASCII sort "README.md" outranks every
-  # "2026-..." name — so a bare *.md glob spent one of the three slots on
-  # the README in every session, and once three real notes existed it
-  # silently pushed the oldest of them out. Anchoring on a leading digit
-  # also keeps any other prose the owner drops in here out of the context.
+  # for, and in a descending sort "README.md" outranks every "2026-..."
+  # name — so a bare *.md glob spent one of the three slots on the README
+  # in every session, and once three real notes existed it silently pushed
+  # the oldest of them out. Anchoring on a leading digit also keeps any
+  # other prose the owner drops in here out of the context.
+  #
+  # Collect via the glob itself rather than by reading `ls` output: a path
+  # is not a line of text, and a common Obsidian vault path like
+  # ".../My Vault/ai-improvements/..." contains spaces. Bash expands a glob
+  # already sorted ascending, so walking it backwards yields the newest
+  # first without a subshell, a sort, or any word-splitting.
+  shopt -s nullglob
+  entries=("$ENTRIES_DIR"/[0-9]*.md)
+  shopt -u nullglob
   files=()
-  while IFS= read -r f; do
-    files+=("$f")
-  done < <(ls "$ENTRIES_DIR"/[0-9]*.md 2>/dev/null | sort -r | head -3)
+  for (( i=${#entries[@]}-1; i>=0 && ${#files[@]}<3; i-- )); do
+    files+=("${entries[i]}")
+  done
   for f in "${files[@]}"; do
     RECENT_CONTENT+=$'\n\n---\n\n'
     RECENT_CONTENT+=$(cat "$f")
