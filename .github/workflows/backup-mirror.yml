@@ -18,6 +18,15 @@ on:
     - cron: "37 5 * * *" # daily ~05:37 UTC
   workflow_dispatch: {}
 
+# This job only ever reads this repo and pushes to the *other* host using
+# BACKUP_MIRROR_URL, so the built-in GITHUB_TOKEN needs nothing beyond
+# read. Without this block the token inherits the repo-wide default, which
+# on a repo still set to "read and write" means a job holding a push
+# credential for a second git host also carries write access to every
+# scope here. The other two workflows already scope theirs.
+permissions:
+  contents: read
+
 # Push-triggered runs can overlap; without this, an older run that clones
 # before a newer commit can still push --mirror after the newer run and
 # rewind the off-site copy to a stale state. Queue runs instead of racing.
