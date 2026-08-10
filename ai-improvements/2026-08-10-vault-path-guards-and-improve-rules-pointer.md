@@ -35,6 +35,34 @@ tags: [ai-improvement, mistake, friction, decision]
   every session and would have started silently dropping the oldest real
   note once three existed. Both defects this session were found by
   running the thing, not by reading it.
+- An independent security audit on PR #5 then found the pointer fix
+  itself did not work where it mattered, and the root cause was a level
+  above the code. `SECURITY.md` was added to the force-sync list *in the
+  same PR*, and that list lives inside `.github/workflows/template-sync.yml`,
+  which GitHub hard-blocks the Actions token from updating — a limit that
+  file's own header documents. So adding a force-synced path is the one
+  operation that delivery mechanism cannot perform on itself: an
+  already-deployed vault receives the updated hook and never the file the
+  hook points at, and the `-f "$SECURITY_FILE"` gate then emits nothing.
+  Deployed vaults got the untrusted-content fence with none of the
+  write-side rules. The recorded reasoning ("put the rules where sync can
+  reach them") was right about `SECURITY.md` and `SKILL.md` and stopped
+  one level short of the list itself.
+- The verification that missed it was the more instructive part. Each
+  scratch vault used to test the hook was built by copying `SECURITY.md`
+  into place first, so every fixture guaranteed the precondition that
+  real deployed vaults would not supply. The tests confirmed the hook
+  emitted a pointer when the file was present; nothing asked whether the
+  file would ever arrive.
+- The same audit found the note fence was bypassable by filename. Fencing
+  note bodies assumed notes were the channel an attacker would use, while
+  the identical write privilege also reached `CLAUDE.md`, which is loaded
+  into every session verbatim and unfenced. The fence held mechanically
+  under test — verified against six escape attempts — which was true and
+  beside the point, because the unmeasured channel stayed open. Sharpest
+  evidence it was real: `SECURITY.md` §2, added by that same PR, directs
+  standing instructions *to* `CLAUDE.md` as the trusted diff-reviewable
+  channel, which only holds if the connector cannot write it.
 
 ## Workflow friction
 
@@ -70,3 +98,18 @@ tags: [ai-improvement, mistake, friction, decision]
 - The guard work and the hook pointer went in as two separate commits
   rather than one, since they are independent changes that happened to
   share a working tree.
+- Of the audit's five findings, two were fixed on the branch and three
+  were left. The split was drawn on whether the finding was a defect in a
+  claim the PR itself made — the undelivered rules and the writable
+  `CLAUDE.md`, both fixed — versus a standing policy decision: adding PR
+  CI, committing a lockfile that is deliberately gitignored, and scoping
+  a workflow token. The owner was asked about those three and the
+  question went unanswered, so they were left untouched rather than
+  decided unilaterally. They interlock: the proposed CI runs `npm ci`,
+  which needs the committed lockfile to exist first.
+- The audit's findings were re-derived by execution before any were
+  acted on, rather than accepted from the report. All five reproduced.
+  One detail in it did not survive contact: it proposed `bash -n` in CI
+  for the hooks, but neither bash defect in this branch was a syntax
+  error — both were behavioural and appeared only when the hook ran
+  against a realistic vault, so parsing alone would have caught neither.
