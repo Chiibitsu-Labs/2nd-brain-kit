@@ -23,9 +23,9 @@ tags: [ai-improvement, mistake, preference, decision]
 
 - Offered the choice between merging a 32-line status-code fix
   immediately and running the two-pass review gate on it first, the owner
-  chose to run the gate. The rule in doc 04 — every PR, however small the
-  diff — is meant literally, and convenience is not a reason to make an
-  exception to it.
+  chose the gate, confirming that doc 04's "every PR, however small the
+  diff" was meant to cover changes that small. The gate then found a
+  defect that the fix itself had introduced.
 
 ## Decisions
 
@@ -41,9 +41,16 @@ tags: [ai-improvement, mistake, preference, decision]
   have reset the review count for a pass already in flight — the
   session-record exemption covers the vault's own repo, but the cost here
   was a live review, not a rule.
-- Merge order was driven deliberately: the PR carrying the CI workflow
-  merged first, then the follow-up branch was updated to `main` so the
-  gates applied to it. Before that update the follow-up ran only the
-  mirror job; after it, all three checks ran and passed. A sibling
-  branched before the CI lands is not covered by CI, and nothing warns
-  about it — the checks list just looks short.
+- A follow-up PR opened while the CI workflow was still unmerged ran only
+  the mirror job. After the CI PR merged and the follow-up branch was
+  updated to `main`, all three checks ran and passed. What that sequence
+  actually establishes is narrower than it first looked: the second push
+  produced a new pull-request event at a moment when `main` carried the
+  workflow. It does not establish that updating the branch was required —
+  review pointed out that a `pull_request` workflow present on the base
+  is evaluated for any subsequent event on the PR, so re-triggering would
+  likely have sufficed. Recorded this way because the wider reading —
+  "a branch created before CI landed is not covered by it" — would send a
+  later session rewriting a reviewed branch when a new event was all that
+  was missing. The observation that holds: a short checks list is worth
+  looking at, since nothing announces that a workflow did not run.
