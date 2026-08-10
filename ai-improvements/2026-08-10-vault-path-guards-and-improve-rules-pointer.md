@@ -2,7 +2,7 @@
 date: 2026-08-10
 project: 2nd-brain-kit (vault-mcp path guards + improve skill security rules)
 source: claude-code
-tags: [ai-improvement, mistake, friction, decision]
+tags: [ai-improvement, mistake, preference, friction, decision]
 ---
 
 ## AI mistakes
@@ -63,6 +63,38 @@ tags: [ai-improvement, mistake, friction, decision]
   evidence it was real: `SECURITY.md` §2, added by that same PR, directs
   standing instructions *to* `CLAUDE.md` as the trusted diff-reviewable
   channel, which only holds if the connector cannot write it.
+- Immediately after fixing that gap, a Codex review found two more
+  spellings the new list missed: `CLAUDE.local.md`, which Claude Code
+  loads as project-local instructions in its own right, and the root
+  `.devcontainer.json` form, which the `.devcontainer/` prefix does not
+  cover. Both were the same failure as the one just fixed, one level
+  finer: the list had been written from the canonical name of each file
+  rather than from every spelling the tools actually accept. For a
+  protected-name set specifically, a missed spelling is not a partial
+  gap — it reopens the whole path.
+- Writing the CI test suite surfaced another defect that had survived
+  every prior read of the file: shellcheck's SC2012 on parsing `ls`
+  output to pick recent notes. The surrounding comment had already
+  worried in prose about spaces in Obsidian vault paths like
+  `My Vault/`, while the code directly under it still parsed `ls`.
+- The security audit that drove much of this was itself wrong on one
+  checkable point: it described all six dependency advisories as
+  transitive through `next`, when three come through
+  `mcp-handler` → `@modelcontextprotocol/sdk` → `@hono/node-server`. It
+  had separately flagged `mcp-handler` as deserving attention while
+  attributing its advisories elsewhere. Reports worth acting on are still
+  worth re-deriving.
+
+## Preferences
+
+- The owner stated that pull requests here follow the "vibeOS protocol":
+  a Codex review, iterated until twice clean, then mark ready for review,
+  twice clean again, then merge — and that they drive those state
+  transitions themselves rather than having them done for them. They said
+  they had already handled #5 that way manually. Read as: the PR's
+  draft/ready/merge state is the owner's to move, and review rounds are
+  expected to repeat until two consecutive clean passes, not merged on
+  the first green.
 
 ## Workflow friction
 
@@ -113,3 +145,18 @@ tags: [ai-improvement, mistake, friction, decision]
   for the hooks, but neither bash defect in this branch was a syntax
   error — both were behavioural and appeared only when the hook ran
   against a realistic vault, so parsing alone would have caught neither.
+- The owner later approved all three deferred findings, and they landed
+  with two calls worth recording. First, the CI dependency-audit gate was
+  set at `critical` rather than `high`: all six current advisories are
+  unfixable from this repo (`npm audit fix` is a no-op, since `next` and
+  `mcp-handler` are already at their latest versions and it is their
+  pinned transitives that carry the advisories), so a `high` gate would
+  have merged red and stayed red, and a permanently red check stops being
+  read. The full advisory list prints on every run so movement stays
+  visible; the gate covers only what is actionable. Second, the hooks job
+  runs a behavioural fixture suite rather than only `bash -n` and
+  shellcheck, on the evidence that every defect these hooks have shipped
+  was syntactically valid.
+- Waiting on CI by backgrounding a shell loop of `sleep` calls was the
+  wrong instrument — it produced no signal and had to be stopped. Polling
+  the checks directly answered it in one call.
