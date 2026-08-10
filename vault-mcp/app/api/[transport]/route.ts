@@ -51,6 +51,10 @@ const PROTECTED_ROOT_FILES = new Set([
   "package-lock.json",
   "next.config.mjs",
   "next.config.js",
+  // Next.js accepts a TypeScript config too, and it's server code like the
+  // other two — leaving it off the list made this set quietly narrower than
+  // "the deploy config", which is what everything referring to it assumes.
+  "next.config.ts",
   "tsconfig.json",
   ".gitignore",
 ]);
@@ -119,16 +123,29 @@ function resolveVaultPath(rawPath: string, { allowRoot = false } = {}): Resolved
 // anywhere in the vault, but never in the deployment's own footprint.
 // Takes an already-resolved path, so it can never be handed a "."- or
 // ".."-laden variant of a protected path.
+// Build the string the protection checks compare against — never the
+// string written. Two filesystem quirks can make a name that doesn't look
+// protected resolve to a protected file once the repo is checked out, and
+// both have to be folded away here or the guard is bypassable by spelling:
+//
+//   - Case. GitHub's repo storage is case-sensitive, but a checkout onto a
+//     case-insensitive filesystem (macOS/Windows default) aliases
+//     ".CLAUDE/..." onto the real ".claude/..." on disk.
+//   - Trailing dots and spaces. The Win32 path layer silently strips them,
+//     so ".claude./hooks/x" and ".claude /hooks/x" both open the real
+//     ".claude/hooks/x" on Windows. GitHub stores the literal name, so this
+//     only bites on the checkout — which is exactly where the auto-run
+//     hooks and Obsidian plugins live, so that's the side that matters.
+function protectionKey(p: string): string {
+  return p
+    .split("/")
+    .map((seg) => seg.replace(/[. ]+$/, ""))
+    .join("/")
+    .toLowerCase();
+}
+
 function protectedWriteReason(norm: string): string | null {
-  // Case-fold only for the protection checks below, never for the actual
-  // write (the commit uses the resolved, original-case path). GitHub's own
-  // repo storage is case-sensitive, but a checkout onto a case-insensitive
-  // filesystem (macOS/Windows default) can alias ".CLAUDE/..." onto the
-  // real ".claude/..." on disk — a case-sensitive comparison here could be
-  // bypassed by writing an upper/mixed-case variant of a protected path
-  // that still lands on (or collides with) the real file once a human
-  // checks the repo out.
-  const normLower = norm.toLowerCase();
+  const normLower = protectionKey(norm);
   if (PROTECTED_ROOT_FILES.has(normLower)) return `'${norm}' is a protected config file`;
   for (const pre of PROTECTED_PREFIXES) {
     const p = (pre.endsWith("/") ? pre : pre + "/").toLowerCase();
