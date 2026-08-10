@@ -131,21 +131,45 @@ latter two.
 
 None required — no finding was disputed.
 
-## Gate status (honest)
+## Gate status
 
-**The PR review gate is NOT open.** Doc 04 requires two consecutive
-cross-vendor reviews of the PR's *current* head with no unresolved
-findings, keyed to both the reviewed head and the target tip.
+**The PR review gate is OPEN.** Two consecutive cross-vendor reviews of
+the tracked head with no unresolved findings, the target tip unmoved
+across both.
 
-- Clean passes at head `0961d15`: **0**. Every Codex review so far read
-  an earlier head; the Tier 2 fixes above will produce a newer head still.
-- The 16 findings were resolved and their threads closed, which is not
-  the same as a clean pass — no review has yet read the current diff and
-  returned nothing.
-- Next action: push, then request a fresh cross-vendor review, twice, and
-  record both SHAs with each pass.
+| Pass | Reviewed head | Target tip | Verdict |
+|---|---|---|---|
+| 1 | `0a6a21c` | `52a782b` | Clean — no major issues |
+| 2 | `39a0205` | `52a782b` | Clean — no major issues |
 
-Per doc 04's own caveat: two clean passes raise confidence, they do not
-certify the diff. What carries weight here is Tier 1 (green at
-`0961d15`), the behavioural suite, and the founder's judgment about
-whether the change is right.
+Both SHA pairs are recorded here rather than only in the thread, because
+a PR shows the *current* target tip and never the one a past review ran
+against — an unrecorded pair cannot be reconstructed later, and a gate
+can look open for an integration nobody reviewed.
+
+`39a0205` is a session-record commit (an improve note plus its index
+line, no change to reviewed code). The founder ruled that improve notes
+are this vault's equivalent of the `ops/tasks.md` HANDOFF sub-line, so
+doc 04 step 2's exemption applies and pass 1 survived it. Recording the
+ruling here because it is a canon decision that outlives this PR: the
+exemption is written for a path this vault does not have, and a later
+session reading only doc 04 would count these two passes as one.
+
+**Open question for the retro, not for this PR.** The exemption grants
+one landing after a clean pass, singular. This branch took three improve
+notes in a day; at that rhythm the session-record rule and the gate will
+collide again. Either notes batch to merge-time, or the allowance is per
+pass rather than per streak.
+
+Per doc 04's own caveat, recorded so an open gate is not mistaken for a
+certificate: two clean passes mean two reviewers found nothing on two
+occasions. The reviewer is non-deterministic; unchanged text can pass
+twice and fail a third look. What carries weight here is Tier 1 (green at
+`39a0205`), the behavioural suite, and the founder's judgment. The merge
+decision is the founder's.
+
+### Deferred to the founder
+
+One item needs a routing decision and is not resolved by this gate: the
+`req.json()` deferral (F-5b above). It is safe to ship — the request is
+rejected either way — but it should not be lost.
