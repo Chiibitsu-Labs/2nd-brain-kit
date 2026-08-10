@@ -131,6 +131,43 @@ else
   ok "command substitution in a note did not execute"
 fi
 
+# 10. The rules must survive a missing `jq`. That is not a hypothetical:
+#     jq ships on neither macOS nor Windows by default, and the vault
+#     most likely to lack it is the same already-deployed vault that
+#     lacks SECURITY.md — exactly the one whose first note would
+#     otherwise be written with no rules loaded.
+STUB="$WORK/nojq-bin"; mkdir -p "$STUB"
+for c in bash cat sed grep head od tr printf ls mktemp; do
+  src="$(command -v "$c" 2>/dev/null)" && ln -sf "$src" "$STUB/$c"
+done
+V="$WORK/nojq"; make_vault "$V" with_index with_notes
+NOJQ_OUT="$(PATH="$STUB" CLAUDE_PROJECT_DIR="$V" bash "$HOOK" 2>/dev/null)"
+[[ -n "$NOJQ_OUT" ]]; check "emits something without jq on PATH" "$?"
+grep -qi "security rules" <<<"$NOJQ_OUT"; check "rules delivered without jq" "$?"
+# Validate with a real jq, run by absolute path so the stubbed PATH above
+# doesn't decide whether we can check our own output.
+JQ_BIN="$(command -v jq)"
+printf '%s' "$NOJQ_OUT" | "$JQ_BIN" -e . >/dev/null 2>&1
+check "no-jq output is still valid JSON" "$?"
+printf '%s' "$NOJQ_OUT" \
+  | "$JQ_BIN" -e '.hookSpecificOutput.hookEventName == "SessionStart"' >/dev/null 2>&1
+check "no-jq output has the right hook envelope" "$?"
+# Note bodies are deliberately NOT emitted without jq: escaping untrusted
+# content by hand is the bug this avoids.
+! grep -q "NOTEBODY-" <<<"$NOJQ_OUT"; check "no-jq path does not emit note bodies" "$?"
+
+# 11. Only genuinely date-shaped filenames count as notes. A leading digit
+#     is not enough: "9-README.md" sorts after every ISO date, so it would
+#     be picked first and evict a real note — the README bug again, one
+#     character in.
+V="$WORK/numprefix"; make_vault "$V" with_security with_index with_notes
+echo "NUMBEREDDOC" > "$V/ai-improvements/9-README.md"
+echo "NUMBEREDDOC2" > "$V/ai-improvements/2026-notes.md"
+OUT="$(run_hook "$V")"
+! grep -q "NUMBEREDDOC" <<<"$OUT"; check "numeric-prefixed non-note not loaded" "$?"
+[[ "$(grep -c "NOTEBODY-" <<<"$OUT")" == "3" ]]; check "3 real notes still loaded alongside it" "$?"
+grep -q "NOTEBODY-2026-08-08-b" <<<"$OUT"; check "no real note evicted by a numeric doc" "$?"
+
 echo
 echo "passed: $PASS  failed: $FAIL"
 [[ "$FAIL" -eq 0 ]]

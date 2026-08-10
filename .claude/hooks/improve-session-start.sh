@@ -18,12 +18,20 @@
 #
 # Part of the Second Brain Kit by Chiibitsu Labs (labs@chiibitsu.com).
 
-# These hooks need `jq` to emit their JSON, and it isn't preinstalled on
-# macOS or Windows. If it's missing, degrade gracefully: exit 0 so the
-# session still starts normally — the automatic memory just stays off until
-# `jq` is installed (the setup guide has the one-line command). Never fail a
-# session over a missing helper.
-command -v jq >/dev/null 2>&1 || exit 0
+# Escape a string for embedding in a JSON string literal. Used ONLY for
+# this script's own static text, never for note bodies — hand-rolled
+# escaping of arbitrary file content is exactly the sort of thing that
+# quietly emits malformed JSON, which is why the note path below requires
+# `jq` and this does not.
+json_escape() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  printf '%s' "$s"
+}
 
 VAULT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 INDEX_FILE="$VAULT_DIR/00_moc/AI Improvements Index.md"
@@ -109,6 +117,24 @@ RULESEOF
 )
 fi
 
+# `jq` isn't preinstalled on macOS or Windows, and the note-loading path
+# below needs it: note bodies are untrusted arbitrary text, and escaping
+# that by hand is how malformed JSON gets emitted.
+#
+# The rules are a different matter. They are this script's own static
+# text, so they can be escaped safely without jq — and they are the part
+# that must not be skipped. A vault missing jq is disproportionately
+# likely to be the same vault missing SECURITY.md (both mean "deployed
+# and not fully caught up"), which is precisely the vault whose first
+# improve note would otherwise be written with no path, secret, or commit
+# restrictions loaded at all. Losing the notes to a missing helper is an
+# inconvenience; losing the rules is a security hole.
+if ! command -v jq >/dev/null 2>&1; then
+  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' \
+    "$(json_escape "$RULES_POINTER")"
+  exit 0
+fi
+
 # No notes yet (skill hasn't written a first one). Nothing to load, but
 # the rules above still go out: this is the first session in a fresh
 # vault, which is the one that writes the first note and so the one that
@@ -126,13 +152,15 @@ if [[ -d "$ENTRIES_DIR" ]]; then
   # checkout doesn't preserve original write times, so anything time-based
   # can surface arbitrary files instead of the most recently dated notes.
   #
-  # Match only dated note filenames (YYYY-MM-DD-slug.md), not every *.md
-  # in the folder. The folder ships with a README.md explaining what it's
-  # for, and in a descending sort "README.md" outranks every "2026-..."
-  # name — so a bare *.md glob spent one of the three slots on the README
-  # in every session, and once three real notes existed it silently pushed
-  # the oldest of them out. Anchoring on a leading digit also keeps any
-  # other prose the owner drops in here out of the context.
+  # Match the full YYYY-MM-DD date shape, not merely a leading digit. The
+  # folder ships with a README.md explaining what it's for, and a bare
+  # *.md glob spent one of the three slots on it every session — but
+  # anchoring on just "[0-9]" reintroduced the same bug one character in:
+  # "9-README.md" starts with a digit and sorts *after* every "2026-..."
+  # name, so it would be picked first and evict a real note. Requiring all
+  # eight date digits is what actually restricts this to notes the skill
+  # wrote, and keeps any other numbered document the owner drops in here
+  # out of the context.
   #
   # Collect via the glob itself rather than by reading `ls` output: a path
   # is not a line of text, and a common Obsidian vault path like
@@ -140,7 +168,7 @@ if [[ -d "$ENTRIES_DIR" ]]; then
   # already sorted ascending, so walking it backwards yields the newest
   # first without a subshell, a sort, or any word-splitting.
   shopt -s nullglob
-  entries=("$ENTRIES_DIR"/[0-9]*.md)
+  entries=("$ENTRIES_DIR"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*.md)
   shopt -u nullglob
   files=()
   for (( i=${#entries[@]}-1; i>=0 && ${#files[@]}<3; i-- )); do
