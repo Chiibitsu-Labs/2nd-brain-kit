@@ -34,9 +34,75 @@ json_escape() {
 }
 
 VAULT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-INDEX_FILE="$VAULT_DIR/00_moc/AI Improvements Index.md"
-ENTRIES_DIR="$VAULT_DIR/ai-improvements"
 SECURITY_FILE="$VAULT_DIR/.claude/skills/improve/SECURITY.md"
+
+# Where this vault keeps its notes and its index.
+#
+# These were hardcoded, and this file is force-synced, so a vault that
+# organises its notes differently got the two worst properties together:
+# it could not change them, and the failure was silent. A wrong entries
+# directory produces no notes, no error, and a clean exit 0 — identical
+# output to a vault that simply has no notes yet.
+#
+# Overridable from .claude/improve.paths, deliberately not from
+# .claude/settings.json: settings.json is force-synced, so per-vault
+# configuration written there is overwritten by the next kit update. This
+# file is not on the sync list and survives. It sits under .claude/, which
+# the connector's write guard protects, so it stays a human-authored,
+# diff-reviewable file rather than something a tool call can repoint.
+#
+# Format is one KEY=value per line, # for comments:
+#
+#   entries_dir=03_notes/ai-improvements
+#   index_file=03_notes/Improvements Index.md
+#
+# Both are relative to the vault root. Values are used unquoted, so a path
+# with spaces needs no escaping — everything after the first "=" is the
+# value.
+IMPROVE_ENTRIES_REL="ai-improvements"
+IMPROVE_INDEX_REL="00_moc/AI Improvements Index.md"
+PATHS_FILE="$VAULT_DIR/.claude/improve.paths"
+PATHS_PROBLEM=""
+
+# Refuse anything that is not a plain relative path inside the vault. This
+# only ever selects which file to *read*, but a hook that followed "../.."
+# out of the vault would quietly load someone else's file into every
+# session's context, and saying so beats resolving it.
+paths_value_ok() {
+  local v=$1
+  [[ -n "$v" ]] || return 1
+  [[ "$v" != /* ]] || return 1
+  [[ "$v" != *..* ]] || return 1
+  return 0
+}
+
+if [[ -f "$PATHS_FILE" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"                       # tolerate CRLF
+    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    # Trim surrounding whitespace from both halves. A trailing space on a
+    # path is invisible in an editor and would otherwise select a
+    # directory that does not exist.
+    key="${key#"${key%%[![:space:]]*}"}"; key="${key%"${key##*[![:space:]]}"}"
+    val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"
+    val="${val%/}"
+    case "$key" in
+      entries_dir)
+        if paths_value_ok "$val"; then IMPROVE_ENTRIES_REL="$val"
+        else PATHS_PROBLEM+="entries_dir in .claude/improve.paths is not a plain relative path and was ignored. "; fi
+        ;;
+      index_file)
+        if paths_value_ok "$val"; then IMPROVE_INDEX_REL="$val"
+        else PATHS_PROBLEM+="index_file in .claude/improve.paths is not a plain relative path and was ignored. "; fi
+        ;;
+    esac
+  done < "$PATHS_FILE"
+fi
+
+INDEX_FILE="$VAULT_DIR/$IMPROVE_INDEX_REL"
+ENTRIES_DIR="$VAULT_DIR/$IMPROVE_ENTRIES_REL"
 
 # Emitted whether or not any notes exist yet. The Stop hook nudges toward
 # the improve skill at the end of *every* session, including the very
@@ -139,6 +205,47 @@ fi
 # the rules above still go out: this is the first session in a fresh
 # vault, which is the one that writes the first note and so the one that
 # most needs the write-side rules already loaded.
+# Probed before the index check so a misconfigured index path can report
+# whether notes exist anyway, which is the difference between "this vault
+# is new" and "this vault's notes are somewhere else".
+shopt -s nullglob
+_probe=("$ENTRIES_DIR"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-?*.md)
+shopt -u nullglob
+
+# Report a path that resolved to nothing, rather than loading zero notes
+# and exiting 0. Only the cases that are unambiguously wrong: a fresh
+# vault has neither file and needs no warning, and saying so every session
+# until the first note lands would be noise in exactly the vault that has
+# nothing to say.
+if [[ ! -f "$INDEX_FILE" && ${#_probe[@]} -gt 0 ]]; then
+  PATHS_PROBLEM+="Improve index not found at '$IMPROVE_INDEX_REL', but ${#_probe[@]} note(s) exist at '$IMPROVE_ENTRIES_REL'. Set index_file in .claude/improve.paths. "
+elif [[ -f "$INDEX_FILE" && ! -d "$ENTRIES_DIR" ]]; then
+  PATHS_PROBLEM+="Improve notes directory not found at '$IMPROVE_ENTRIES_REL', so no past notes were loaded. Set entries_dir in .claude/improve.paths. "
+elif [[ ! -f "$INDEX_FILE" && ${#_probe[@]} -eq 0 ]]; then
+  # Nothing at either configured path. A vault whose notes live elsewhere
+  # is indistinguishable from a brand-new one at this point — both have
+  # exactly nothing where the loader looked — so the only way to tell them
+  # apart is to look elsewhere. Bounded deliberately: depth 4, dot
+  # directories pruned, stops at the first hit, and reached only in the
+  # case that has already found nothing, so a vault in normal operation
+  # never pays for it.
+  _found=$(find "$VAULT_DIR" -maxdepth 4 \
+             \( -mindepth 1 -type d -name '.*' -prune \) -o \
+             \( -type f -name '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-?*.md' -print \) \
+             2>/dev/null | head -n 1)
+  if [[ -n "$_found" ]]; then
+    _found_dir=$(dirname "$_found")
+    _found_rel="${_found_dir#"$VAULT_DIR"/}"
+    PATHS_PROBLEM+="No improve notes at '$IMPROVE_ENTRIES_REL', but notes with the expected filename exist at '$_found_rel'. Set entries_dir in .claude/improve.paths. "
+  fi
+fi
+
+if [[ -n "$PATHS_PROBLEM" ]]; then
+  RULES_POINTER+=$'\n\n## improve loader — path problem\n\n'
+  RULES_POINTER+="$PATHS_PROBLEM"
+  RULES_POINTER+=$'\n\nThis is the session loader reporting its own configuration, not vault content.'
+fi
+
 if [[ ! -f "$INDEX_FILE" ]]; then
   jq -n --arg ctx "$RULES_POINTER" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'
   exit 0
@@ -167,9 +274,10 @@ if [[ -d "$ENTRIES_DIR" ]]; then
   # ".../My Vault/ai-improvements/..." contains spaces. Bash expands a glob
   # already sorted ascending, so walking it backwards yields the newest
   # first without a subshell, a sort, or any word-splitting.
-  shopt -s nullglob
-  entries=("$ENTRIES_DIR"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-?*.md)
-  shopt -u nullglob
+  # Reuses the probe expanded above rather than repeating the glob — two
+  # copies of this pattern is two places for the documented filename shape
+  # to drift, and the whole point of the shape is that it is exact.
+  entries=("${_probe[@]}")
   files=()
   for (( i=${#entries[@]}-1; i>=0 && ${#files[@]}<3; i-- )); do
     files+=("${entries[i]}")
