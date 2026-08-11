@@ -23,18 +23,23 @@ tags: [ai-improvement, mistake, decision]
   deferral can be properly ticketed somewhere this session cannot see.
   Claims about what is recorded were scoped to "in this tree" everywhere
   else in these notes, and that scoping was dropped for this one.
-- The write guard's protected-name list was found to enumerate the
-  instances its authors already knew about rather than the class the
-  guard's own refusal message names — "loaded as instructions by agents
-  reading this vault." Neither breadth nor a stated rule was missing: the
-  guard already covered several vendors across a basename set, a prefix
-  list and a root-file set, and the comment above them already described
-  the class. What was missing was any check that implemented the class
-  rather than a list of members, so a tool whose files matched no entry
-  in any of the three sets met a guard that described the right boundary
-  and did not apply it. The exact contents of those sets at the time are
-  in the repository at `a41ae87`; restating them here has been wrong four
-  times and the record is one `git show` away.
+- The write guard was found to enumerate the instances its authors
+  already knew about rather than the class it existed to close: files
+  that supply an agent with instructions, or that configure what a tool
+  runs. Its own refusal message named the first half — "loaded as
+  instructions by agents reading this vault" — and the paths found open
+  included both kinds.
+
+  The guard was not single-vendor and the rule was not unwritten: it
+  already spanned several vendors across a basename set, a prefix list
+  and a root-file set, and the comment above them described the class.
+  Breadth was still short by six vendor surfaces, which is the point —
+  breadth is what an enumeration can always be more of, and no amount of
+  it becomes a boundary. What was missing was any check that implemented
+  the class rather than a list of members, so a tool whose files matched
+  no entry in any of the three sets met a guard that described the right
+  boundary and did not apply it. What those sets contained is in the
+  repository at `a41ae87`, which is where a reader should go for it.
   Reproduced by driving the real `resolveVaultPath` and
   `protectedWriteReason`: `.cursorrules`, `.cursor/rules/*.mdc`,
   `.windsurfrules`, `GEMINI.md`, `.clinerules`, `.continue/config.json`
