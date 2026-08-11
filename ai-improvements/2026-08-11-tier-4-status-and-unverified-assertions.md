@@ -35,8 +35,8 @@ tags: [ai-improvement, mistake, decision]
   after the first had been written down.
 - The status of two `claude/*` branches was reported to the owner four
   times — an initial answer and three revisions — and the version that
-  survived is the first one. Called open work on
-  `git branch -r --no-merged`; corrected to
+  survived is the *first correction*, not the initial report. Called open
+  work on `git branch -r --no-merged`; corrected to
   "stale" from a grep suggested by a branch name; corrected again to
   "one carries 21 unmerged lines" after comparing file contents at the
   two tips; corrected a third time by review, back to stale. Settled by
@@ -83,32 +83,27 @@ tags: [ai-improvement, mistake, decision]
   What was accurate: the ref was stale, and the file contents in the
   working tree were the pre-merge ones.
 
-- This note took three review rounds and nine findings before it was
-  accurate, and the split between them is the record worth keeping.
-  Every round found the same class — a claim stated past its evidence —
-  but the nine divide unevenly, and review had to correct the summary
-  written here too:
-  - **Six were in the first commit** (`a3d7056`) and survived earlier
-    rounds unnoticed: three found in round one, and three more — the
-    index summary, the live-deployment assertion, the branch-status
-    inference — found in round two, having sat untouched through round
-    one's fixes.
-  - **Three were introduced by fixes**: the `authorize` coverage claim in
-    `faa5beb`, and in `d736eee` both the "21 unmerged lines" conclusion
-    and the reversed three-dot explanation — the latter written inside a
-    correction of that same misconception.
+- Repeated review of this note found the same class of defect each time:
+  a claim stated past its evidence. Two things are worth keeping from
+  that, both stated without a tally — an earlier version of this entry
+  counted the rounds and findings, and every count went stale the moment
+  the next round closed, generating a fresh finding about the count
+  rather than about the work.
 
-  So the dominant failure was not writing new errors while fixing old
-  ones; it was fixing the instances named and not sweeping the file for
-  their siblings. Rounds two and three were mostly spent on claims that
-  had been there from the start.
+  Most of the flagged claims were present in the first commit
+  (`a3d7056`) and survived rounds of fixes aimed at their neighbours: the
+  index summary, the live-deployment assertion and the branch-status
+  inference all sat untouched while adjacent sentences were corrected.
+  The failure was not writing new errors while fixing old ones — that
+  happened, in `faa5beb` and `d736eee` — but fixing each named instance
+  without sweeping the file for others of the same shape.
 
-  The instrument error underneath: comparing file contents at two tips
-  answers whether they differ, not which side is ahead, and "differs" was
-  read as "the branch has something extra" without the other possibility
-  being considered. What settled it was commit messages naming reviewed
-  SHAs — `12c222c` and `52a782b` — which had been in the history the
-  whole time.
+  The instrument error underneath the branch conclusions: comparing file
+  contents at two tips answers whether they differ, not which side is
+  ahead, and "differs" was read as "the branch has something extra"
+  without the other possibility being considered. What settled it was
+  commit messages naming reviewed SHAs — `12c222c` and `52a782b` — which
+  had been in the history the whole time.
 
 ## Decisions
 
