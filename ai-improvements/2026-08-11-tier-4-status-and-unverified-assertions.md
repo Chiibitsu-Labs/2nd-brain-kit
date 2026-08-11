@@ -11,14 +11,18 @@ tags: [ai-improvement, mistake, decision]
   not yet due" in three consecutive messages, as a settled judgement
   drawn from the category of the work rather than from the repository.
   The owner asked "what about tier 4?" and a short inspection changed the
-  picture: no error tracking or alerting exists anywhere in the connector
-  or its workflows, the backup restore has never been drilled, there is
-  no incident runbook, and the four OAuth routes — where authentication
-  actually happens — have never been covered by any audit pass, with a
-  token-design deferral from the first audit round still open. The
-  original judgement had a real basis (the kit has not shipped to a
-  client vault), but stating it repeatedly without checking left it to
-  the owner to prompt the check.
+  picture. Stated at the scope the repository can actually support: no
+  alerting or error-tracking configuration exists in the connector or its
+  workflows, no incident runbook or restore-drill record exists in the
+  tree, and of the six routes under `vault-mcp/app/api/`, the committed
+  audit pack records coverage of the MCP transport route plus one
+  incidental finding against the OAuth token route — leaving `authorize`,
+  `register` and the two well-known endpoints with no recorded audit
+  coverage. Whether a restore has been performed by hand, or alerting
+  configured at the hosting platform, is not something the tree can
+  answer either way. The original judgement had a real basis (the kit has
+  not shipped to a client vault), but stating it repeatedly without
+  checking left it to the owner to prompt the check.
 - The same session had already recorded a claim about CI trigger types
   that was wrong twice in opposite directions before the trigger
   declaration was read. Both errors took the same route: a conclusion
@@ -34,15 +38,22 @@ tags: [ai-improvement, mistake, decision]
   origin/main` against a stale remote-tracking ref, landing on the
   pre-merge base from before the security work. The working tree then
   held the old session-start hook — no fence, no rules text, the note
-  glob that reads the folder's own README — and a commit there would have
-  produced a pull request whose diff appeared to revert the entire
-  hardening change. It surfaced because a harness message about the file
-  having changed prompted a check of `git status` and the merge
-  ancestry; the branch was recreated from a freshly fetched `origin/main`.
-- While investigating that, a `grep -c` over the file on `main` returned
-  zero for markers that are present in it, which briefly read as evidence
-  that merged work had been reverted. The count was wrong, and reading
-  the file directly showed all 235 lines intact.
+  glob that reads the folder's own README — which read as though merged
+  work had been reverted. Two of the three conclusions drawn in that
+  moment were wrong, and review corrected them:
+  - A `grep -c` over the file on `main` returned zero for markers that
+    are present in it. Reading the file directly showed all 235 lines
+    intact.
+  - Committing on that base was described as producing a pull request
+    whose diff appeared to revert the hardening. It would not have.
+    GitHub compares three-dot from the merge base, and the old base was
+    an ancestor of the current one, so `git diff 88f0ec0...52a782b` is
+    empty and the pull request would have shown the note commit alone.
+    The branch was behind and needed integration; nothing about it
+    threatened the merged work.
+
+  What was accurate: the ref was stale, and the file contents in the
+  working tree were the pre-merge ones.
 
 ## Decisions
 
