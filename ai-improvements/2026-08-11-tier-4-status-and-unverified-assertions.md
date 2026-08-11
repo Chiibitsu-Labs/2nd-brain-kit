@@ -14,11 +14,15 @@ tags: [ai-improvement, mistake, decision]
   picture. Stated at the scope the repository can actually support: no
   alerting or error-tracking configuration exists in the connector or its
   workflows, no incident runbook or restore-drill record exists in the
-  tree, and of the six routes under `vault-mcp/app/api/`, the committed
-  audit pack records coverage of the MCP transport route plus one
-  incidental finding against the OAuth token route — leaving `authorize`,
-  `register` and the two well-known endpoints with no recorded audit
-  coverage. Whether a restore has been performed by hand, or alerting
+  tree, and no Tier 4 pass — a security review of the app as a whole —
+  is recorded anywhere. Route-level coverage is not the same gap, and
+  reading only `product/audits/` understated it: the committed audit pack
+  covers the MCP transport route plus one incidental finding against the
+  OAuth token route, but commit messages on `main` are equally durable
+  record, and `52a782b` documents seven review rounds and two clean
+  passes over the `authorize` route's passphrase boundary. What is left
+  without recorded coverage is `register` and the two well-known
+  endpoints. Whether a restore has been performed by hand, or alerting
   configured at the hosting platform, is not something the tree can
   answer either way. The original judgement had a real basis (the kit has
   not shipped to a client vault), but stating it repeatedly without
@@ -29,26 +33,34 @@ tags: [ai-improvement, mistake, decision]
   generalised from context instead of read off the artifact that decides
   it. The second instance was in a different domain from the first,
   after the first had been written down.
-- Two branches were reported to the owner as open work "not from this
-  session", based on `git branch -r --no-merged`. That was then corrected
-  to "stale rather than live" on the strength of a single grep showing
-  passphrase-throttling code on `main` — a guess about branch contents
-  from a branch name. Review asked for the refs and the comparison, and
-  the comparison found the second correction was also half wrong:
-  - `claude/throttle-passphrase-attempts` (tip `343799f`): every file it
-    touches — `lib/ratelimit.ts`, `lib/samesite.ts`, `lib/kv.ts`,
-    `oauth/authorize/route.ts`, `vault-mcp/README.md` — is byte-identical
-    to `main`. Its work is landed.
-  - `claude/surface-auth-failures` (tip `0216d70`): its version of
-    `app/api/[transport]/route.ts` differs from `main` by 21 lines
-    present only on the branch. It carries unmerged work.
+- The status of two `claude/*` branches was reported to the owner three
+  times and revised twice, and the version that survived is the first
+  one. Called open work on `git branch -r --no-merged`; corrected to
+  "stale" from a grep suggested by a branch name; corrected again to
+  "one carries 21 unmerged lines" after comparing file contents at the
+  two tips; corrected a third time by review, back to stale. Settled by
+  evidence rather than by another comparison:
+  - `claude/throttle-passphrase-attempts` (`343799f`) — main commit
+    `52a782b` changes `oauth/authorize/route.ts` by 84 lines and its
+    message records "Seven review rounds, two independent clean passes
+    on 343799f."
+  - `claude/surface-auth-failures` (`0216d70`) — main commit `12c222c`
+    (PR #3) records "passes on 0216d70."
 
-  Both branches are based on an older `main`, which is why
-  `git diff origin/main...origin/<branch>` reports 531 and 336 changed
-  lines: three-dot compares from the merge base, so most of that total is
-  `main`'s own later work, not the branch's. Reading either the raw count
-  or the branch name would have given the wrong answer in a different
-  direction; comparing file contents at the two tips gave this one.
+  Both were squash-merged, so neither tip is an ancestor of `main` and
+  `--no-merged` lists them, though their content landed. The 21 lines
+  that read as unmerged work are the opposite: all 21 appear in the
+  pre-hardening file at `12c222c`, so they are old lines the later
+  security work replaced and the branch simply predates.
+
+  Comparing tips showed the files differ. It could not show which side
+  was ahead, and "differs" was read as "the branch has something extra"
+  when the branch was behind. `git diff A...B` is
+  `git diff $(git merge-base A B) B` — changes on B since the merge base,
+  never changes made only on A — so the 531 and 336 line counts are each
+  branch's own work since branching, including work whose content reached
+  `main` by another route. The question the commit messages answered, and
+  the diffs could not, was whether that content had already landed.
 - A branch for this note was created with `git checkout -b <name>
   origin/main` against a stale remote-tracking ref, landing on the
   pre-merge base from before the security work. The working tree then
