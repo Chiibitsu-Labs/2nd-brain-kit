@@ -74,7 +74,10 @@ export async function POST(req: Request) {
     return Response.json({ error: "unsupported_grant_type" }, { status: 400 });
   }
 
-  const decoded = verifySignedToken<{ redirect_uri: string; code_challenge: string; jti?: string }>(code);
+  const decoded = verifySignedToken<{ redirect_uri: string; code_challenge: string; jti?: string }>(
+    code,
+    "authorization_code"
+  );
   if (!decoded) {
     return Response.json({ error: "invalid_grant", error_description: "code is invalid or expired" }, { status: 400 });
   }
@@ -99,7 +102,11 @@ export async function POST(req: Request) {
   // A scoped, expiring signed token — never the static VAULT_MCP_TOKEN.
   // OAuth clients each get their own revocable-by-rotation credential;
   // the master token stays in the owner's hands (CLI config) only.
-  const accessToken = issueSignedToken({ sub: "vault-owner", via: "oauth" }, ACCESS_TOKEN_TTL_SECONDS);
+  const accessToken = issueSignedToken(
+    "access_token",
+    { sub: "vault-owner", via: "oauth" },
+    ACCESS_TOKEN_TTL_SECONDS
+  );
 
   return Response.json({
     access_token: accessToken,
