@@ -37,12 +37,23 @@ const MANDATORY_PROTECTED_PREFIXES = [
   "vault-mcp/",
   "tools/",
   ".claude/",
-  ".obsidian/plugins/",
+  // The whole Obsidian config folder, not just plugins/. Protecting only
+  // `.obsidian/plugins/` stopped the connector shipping plugin JS but
+  // left `.obsidian/community-plugins.json` — the *enabled* list —
+  // writable, so a plugin already sitting dormant on disk could be
+  // switched on by a write that never touched executable code. app.json,
+  // hotkeys.json and snippets/ are the same shape, lower yield. A notes
+  // connector has no business anywhere in this folder.
+  ".obsidian/",
   // Editor-managed folders that run commands on open or on container
   // build. They aren't server code, but they're the same class of thing
   // as .claude/: files a human never re-reads that something executes.
   ".vscode/",
   ".devcontainer/",
+  // Rule/config directories for coding agents. Same channel as the
+  // instruction *files* below, just discovered by directory.
+  ".cursor/",
+  ".continue/",
   // Codex reads .codex/config.toml for trusted-repository settings —
   // sandbox policy, MCP servers, hooks — so it configures what runs in a
   // later session just as surely as a hook script does.
@@ -80,12 +91,39 @@ const MANDATORY_PROTECTED_PREFIXES = [
 // run on container build. Missing a spelling reopens the whole path, so
 // these track what the tools actually accept rather than what looks
 // canonical.
+//
+// THE RULE THIS LIST IMPLEMENTS: any file that an agent tool auto-loads
+// as instructions, or that configures what such a tool runs, belongs
+// here — regardless of which vendor ships it. The list below is an
+// enumeration of that rule, and an enumeration is the weakest possible
+// way to express it, so read the rule first and add to the list second.
+//
+// This distinction is not theoretical. An earlier round closed the
+// "fence is bypassable by filename" finding by adding three names —
+// CLAUDE.md, AGENTS.md, .mcp.json — which fixed the instances an audit
+// happened to name and left the class open. Verified by execution: at
+// that point `.cursorrules`, `.windsurfrules`, `GEMINI.md`,
+// `.clinerules`, `.aider.conf.yml`, `.cursor/rules/*.mdc` and
+// `.continue/config.json` were all still writable, every one of them a
+// file some agent loads verbatim as standing instructions.
+//
+// It matters most where the toolchain is unknown. This kit is deployed
+// by people whose editor nobody here can see, so "Claude Code and Codex
+// are covered" is not a property of the vault — it is a property of one
+// operator's habits. Cover the class.
 const PROTECTED_BASENAMES = new Set([
   "claude.md",
   "claude.local.md",
   "agents.md",
   "agents.override.md",
   ".mcp.json",
+  // Other vendors' instruction files, same channel, same consequence.
+  ".cursorrules",
+  ".windsurfrules",
+  ".clinerules",
+  "gemini.md",
+  ".aider.conf.yml",
+  ".aider.conf.yaml",
   ".devcontainer.json",
 ]);
 const EXTRA_PROTECTED_PREFIXES = process.env.VAULT_PROTECTED_PREFIXES
