@@ -118,6 +118,13 @@ const PROTECTED_BASENAMES = new Set([
   "agents.override.md",
   ".mcp.json",
   // Other vendors' instruction files, same channel, same consequence.
+  // The non-dotted ones are the load-bearing entries now: the shape rule
+  // in protectedWriteReason covers every dot path, so an ordinary-looking
+  // filename is the only way an instruction channel still gets through.
+  // QWEN.md (Qwen Code) and AGENT.md (Amp) are both loaded hierarchically
+  // the way CLAUDE.md is, and both read as plain notes until you know.
+  "qwen.md",
+  "agent.md",
   ".cursorrules",
   ".windsurfrules",
   ".clinerules",

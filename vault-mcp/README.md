@@ -50,14 +50,37 @@ Code session with the repo attached.
    - `VAULT_REPO` — **required**: your vault repo name.
    - `VAULT_BRANCH` (optional, defaults to `main`)
    - `VAULT_PROTECTED_PREFIXES` (optional) — comma-separated *extra* path
-     prefixes the connector refuses to write to, on top of a fixed
-     mandatory list (`.github/`, `.vercel/`, `vault-mcp/`, `tools/`,
-     `.claude/`, `.obsidian/plugins/`) that's always protected regardless
-     of this setting — there's no legitimate layout where an AI should be
-     able to rewrite the server's own code or auto-run hooks/plugins, so
-     this variable can only add more protected paths, never remove one of
-     the mandatory ones.
+     prefixes the connector refuses to write to, on top of the mandatory
+     protections described below. It can only add, never remove one of
+     them.
 3. Deploy. Your endpoint is `https://<your-deployment>.vercel.app/api/mcp`.
+
+### What the connector will never write
+
+Read this before organising your vault, because there is no exemption
+switch and the first sign of a clash is a refused write.
+
+- **Every dotfile and dot-directory.** Anything whose path has a segment
+  starting with `.` — `.github/`, `.claude/`, `.obsidian/`, `.vscode/`,
+  `.cursor/`, `.gemini/`, and any tool folder that does not exist yet.
+  Editors and coding agents keep their configuration there, and such a
+  file decides what runs on your machine when the vault is next opened.
+  A notes connector has no reason to write one. **If you keep notes or
+  attachments in a hidden folder, move them somewhere ordinary** — the
+  connector cannot write them where they are.
+- **Files agents load as standing instructions, at any depth** —
+  `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`,
+  `AGENT.md`, `GEMINI.md`, `QWEN.md`, `.mcp.json`, `.devcontainer.json`.
+  These are injected into an assistant's context verbatim, so a write
+  there is a write into every future session's instructions. Note this
+  applies at any depth: a note of your own named exactly `Claude.md` or
+  `Gemini.md` is refused too.
+- **The server's own code and deploy config** — `vault-mcp/`, `tools/`,
+  `package.json`, `vercel.json`, `next.config.*`, `tsconfig.json`.
+
+You can always create any of these by hand. Only the connector is barred,
+which is the boundary that matters: it means a mistaken or manipulated
+tool call cannot reach anything that executes.
 
 `VAULT_OWNER` and `VAULT_REPO` have no defaults — the server refuses every
 tool call until they're set, so a typo fails loudly instead of silently
