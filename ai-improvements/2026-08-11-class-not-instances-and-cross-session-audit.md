@@ -26,20 +26,15 @@ tags: [ai-improvement, mistake, decision]
 - The write guard's protected-name list was found to enumerate the
   instances its authors already knew about rather than the class the
   guard's own refusal message names — "loaded as instructions by agents
-  reading this vault." Not a single-vendor list: the basenames already
-  held Claude Code's memory files, Codex's `AGENTS.md`, `.mcp.json` and
-  `.devcontainer.json`, and `.codex/` was covered separately as a
-  protected prefix. The rule was not missing either: the comment
-  immediately above the list already said the set covered files loaded as
-  instructions by agents, anywhere in the tree. Stating the rule and
-  listing several vendors is what made it look complete — the gap was
-  that nothing enforced the rule except the list and the prefixes beside
-  it. Those prefixes did real work — `.claude/`, `.codex/`, `.agents/`
-  and the rest were blocked, so an unlisted path under one of them was
-  still refused. What walked through was everything outside both: a tool
-  whose files sat in neither a protected prefix nor the basename set met
-  a guard that described the right boundary and did not implement it
-  there.
+  reading this vault." Neither breadth nor a stated rule was missing: the
+  guard already covered several vendors across a basename set, a prefix
+  list and a root-file set, and the comment above them already described
+  the class. What was missing was any check that implemented the class
+  rather than a list of members, so a tool whose files matched no entry
+  in any of the three sets met a guard that described the right boundary
+  and did not apply it. The exact contents of those sets at the time are
+  in the repository at `a41ae87`; restating them here has been wrong four
+  times and the record is one `git show` away.
   Reproduced by driving the real `resolveVaultPath` and
   `protectedWriteReason`: `.cursorrules`, `.cursor/rules/*.mdc`,
   `.windsurfrules`, `GEMINI.md`, `.clinerules`, `.continue/config.json`
@@ -75,23 +70,29 @@ tags: [ai-improvement, mistake, decision]
 - The fix enforces one part of the rule and still enumerates the rest.
   Writes are refused to any path with a dot-leading segment, which closes
   dot-leading tool directories including ones that do not exist yet.
-  Everything without a leading dot is still enumeration: the instruction
-  and config files — `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md`,
-  `WARP.md`, `opencode.json` and its JSONC spelling — and non-dotted tool
-  directories too, of which this repository already has one in `tools/`,
-  protected by an explicit prefix. A future `TOOL.md` or `agent/` reopens
-  that side. It cannot be closed the way the dotted side was: those names
-  are indistinguishable from ordinary notes and folders, and a rule
-  refusing all-caps markdown would refuse a great many real ones.
+  Everything without a leading dot is still enumeration — instruction
+  files such as `CLAUDE.md` and `QWEN.md`, config files such as
+  `opencode.json`, and non-dotted tool directories too, of which this
+  repository already has one in `tools/` protected by an explicit prefix.
+  The current entries are in the merged guard rather than listed here. A
+  future `TOOL.md` or `agent/` reopens that side, and it cannot be closed
+  the way the dotted side was: those names are indistinguishable from
+  ordinary notes and folders, and a rule refusing all-caps markdown would
+  refuse a great many real ones.
 
   Restating the rule in a comment was considered and rejected as the
   whole fix, because a comment stating the class was already present and
   had not stopped the enumeration falling behind it. The comment was
   still expanded, as documentation of what the check enforces — useful
   only because something now enforces part of it.
-- Six vendors were covered and the gap was left open and named rather
-  than quietly bounded: Zed, JetBrains AI, Amp, Roo and Kilo were not
-  attempted, and the review request said so.
+- The first fix covered six vendors and named the ones it had not
+  attempted — Zed, JetBrains AI, Amp, Roo, Kilo — in the review request
+  rather than bounding the gap quietly. Review then exercised several of
+  them, and by the merge all had been reached: the shape rule closes
+  `.zed/`, `.idea/`, `.roo/` and `.kilocode/` without naming them, and
+  Amp's non-dotted `AGENT.md` was found and added explicitly. Stating the
+  gap is what got it closed; the version that listed only what had been
+  checked would have looked more complete and been less so.
 - The `typ` claim on OAuth tokens was not added, though the vibeOS
   session recommended it before handover and the reasoning was accepted.
   Requiring `typ` invalidates every token already issued, including the
