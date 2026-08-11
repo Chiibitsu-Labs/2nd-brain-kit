@@ -50,15 +50,29 @@ Code session with the repo attached.
    - `VAULT_REPO` — **required**: your vault repo name.
    - `VAULT_BRANCH` (optional, defaults to `main`)
    - `OAUTH_REQUIRE_TYP` (optional) — set to `1` **on a brand-new
-     deployment**. Every signed string this server issues now carries a
+     deployment**, and leave it unset on one that was already running
+     before this shipped. Every signed string this server issues carries a
      label saying which of the three kinds it is, and this setting makes
-     the server refuse any token that carries no label at all. A vault
-     deployed fresh has no unlabelled tokens in circulation, so turning it
-     on costs nothing. On a vault that was deployed before this shipped,
-     leave it unset for 30 days — that is the access-token lifetime, after
-     which every unlabelled token has expired on its own — then set it and
-     redeploy. Turning it on early is not dangerous, it just disconnects
-     whoever is currently connected until they reconnect.
+     the server refuse any token that carries no label at all. A fresh
+     vault has no unlabelled tokens in circulation, so turning it on there
+     costs nothing and is strictly better.
+
+     On an **upgraded** vault it is not free, and waiting does not make it
+     free. Access tokens last 30 days, but the client registration a
+     connector stores when it first connects lasts a year — so a legacy
+     registration outlives the access token by eleven months, and turning
+     this on refuses it at the *start* of the reconnect, before the client
+     can recover on its own. The connector then has to be removed and
+     re-added (which registers it afresh) rather than simply
+     reconnecting. So: either accept that one-time removal and re-add for
+     each connected client, or leave the setting off until the
+     registrations have aged out too.
+
+     Leaving it off is a sound choice and not a lingering risk. A token
+     that declares the *wrong* kind is refused either way — that half is
+     unconditional. The only thing this setting adds is refusing tokens
+     that declare no kind at all, and every one of those was issued by
+     your own server before the upgrade.
    - `VAULT_PROTECTED_PREFIXES` (optional) — comma-separated *extra* path
      prefixes the connector refuses to write to, on top of the mandatory
      protections described below. It can only add, never remove one of

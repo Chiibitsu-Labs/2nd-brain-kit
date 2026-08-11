@@ -48,9 +48,19 @@ export type TokenType = "authorization_code" | "client_registration" | "access_t
 // issued before this shipped: live connectors would need to reconnect and
 // registered clients to re-register. A vault deployed fresh should set
 // `OAUTH_REQUIRE_TYP=1` immediately — it has no legacy tokens to break.
-// An existing vault can set it once every pre-existing access token has
-// aged past its 30-day TTL, which is the point at which the leniency
-// below is no longer doing anything.
+//
+// On an upgraded vault, waiting does not make it free, and an earlier
+// draft of this comment claimed it did. Access tokens last 30 days but
+// client registrations last a year, so a legacy registration outlives the
+// access token by eleven months — and it is checked at the very start of
+// the authorization that would otherwise re-issue everything, so a client
+// holding one cannot reconnect its way out. Enabling this on an upgraded
+// vault means each connected client is removed and re-added once. See
+// README.md for what to tell the vault's owner.
+//
+// Leaving it off is not a lingering risk: the mismatch half below is
+// unconditional, so all this adds is refusing tokens that declare no kind
+// at all — every one of which this same server issued before the upgrade.
 //
 // Read at call time, not module load: `next dev` and the test harness
 // both mutate the environment between requests, and a module-level
