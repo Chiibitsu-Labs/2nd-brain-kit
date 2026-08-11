@@ -33,15 +33,24 @@ tags: [ai-improvement, mistake, decision]
   immediately above the list already said the set covered files loaded as
   instructions by agents, anywhere in the tree. Stating the rule and
   listing several vendors is what made it look complete — the gap was
-  that nothing enforced the rule except the list, so every tool outside
-  it walked through a guard that described the right boundary.
+  that nothing enforced the rule except the list and the prefixes beside
+  it. Those prefixes did real work — `.claude/`, `.codex/`, `.agents/`
+  and the rest were blocked, so an unlisted path under one of them was
+  still refused. What walked through was everything outside both: a tool
+  whose files sat in neither a protected prefix nor the basename set met
+  a guard that described the right boundary and did not implement it
+  there.
   Reproduced by driving the real `resolveVaultPath` and
   `protectedWriteReason`: `.cursorrules`, `.cursor/rules/*.mdc`,
   `.windsurfrules`, `GEMINI.md`, `.clinerules`, `.continue/config.json`
   and `.aider.conf.yml` were all writable. They divide into two kinds,
   and the first draft of this note collapsed them: `.cursorrules`,
-  `.cursor/rules/*.mdc`, `.windsurfrules`, `GEMINI.md` and `.clinerules`
-  are loaded verbatim as standing instructions, while
+  `.windsurfrules`, `GEMINI.md` and `.clinerules` are loaded verbatim as
+  standing instructions, `.cursor/rules/*.mdc` files can supply agent
+  instructions — some always applied, others selected by glob or by
+  relevance, with MDC frontmatter read as metadata rather than prose, so
+  the danger is that an attacker can write an always-applied rule rather
+  than that every such file is read every time — while
   `.continue/config.json` and `.aider.conf.yml` are configuration —
   dangerous because they set what a tool runs and which models and
   servers it reaches, not because their text is read as a directive.
