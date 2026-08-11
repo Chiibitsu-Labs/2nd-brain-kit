@@ -84,19 +84,21 @@ tags: [ai-improvement, mistake, decision]
   working tree were the pre-merge ones.
 
 - Repeated review of this note found the same class of defect each time:
-  a claim stated past its evidence. Two things are worth keeping from
-  that, both stated without a tally — an earlier version of this entry
-  counted the rounds and findings, and every count went stale the moment
-  the next round closed, generating a fresh finding about the count
-  rather than about the work.
+  a claim stated past its evidence. What follows is stated without counts
+  or proportions, because two earlier versions of this entry carried
+  them — first a tally of rounds and findings, then a ratio of where the
+  findings came from — and both went stale as soon as the next round
+  closed, producing findings about the arithmetic rather than about the
+  work. Removing the tally and leaving the ratio was itself the failure
+  described below.
 
-  Most of the flagged claims were present in the first commit
-  (`a3d7056`) and survived rounds of fixes aimed at their neighbours: the
-  index summary, the live-deployment assertion and the branch-status
-  inference all sat untouched while adjacent sentences were corrected.
-  The failure was not writing new errors while fixing old ones — that
-  happened, in `faa5beb` and `d736eee` — but fixing each named instance
-  without sweeping the file for others of the same shape.
+  Some flagged claims were present in the first commit (`a3d7056`) and
+  survived rounds of fixes aimed at their neighbours: the index summary,
+  the live-deployment assertion and the branch-status inference all sat
+  untouched while adjacent sentences were corrected. Others were written
+  by the fixes themselves, in `faa5beb` and `d736eee`. Both kinds trace
+  to the same habit: fixing each named instance without sweeping the file
+  for others of the same shape.
 
   The instrument error underneath the branch conclusions: comparing file
   contents at two tips answers whether they differ, not which side is
