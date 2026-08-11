@@ -68,19 +68,28 @@ switch and the first sign of a clash is a refused write.
   A notes connector has no reason to write one. **If you keep notes or
   attachments in a hidden folder, move them somewhere ordinary** — the
   connector cannot write them where they are.
-- **Files agents load as standing instructions, at any depth** —
-  `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`,
-  `AGENT.md`, `GEMINI.md`, `QWEN.md`, `.mcp.json`, `.devcontainer.json`.
-  These are injected into an assistant's context verbatim, so a write
-  there is a write into every future session's instructions. Note this
-  applies at any depth: a note of your own named exactly `Claude.md` or
-  `Gemini.md` is refused too.
+- **Files agents load as standing instructions or tool config, at any
+  depth** — `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`,
+  `AGENTS.override.md`, `AGENT.md`, `GEMINI.md`, `QWEN.md`,
+  `opencode.json`, `.mcp.json`, `.devcontainer.json`. The first group is
+  injected into an assistant's context verbatim, so a write there is a
+  write into every future session's instructions; the last three declare
+  servers or commands to launch. Note this applies at any depth: a note
+  of your own named exactly `Claude.md` or `Gemini.md` is refused too.
 - **The server's own code and deploy config** — `vault-mcp/`, `tools/`,
-  `package.json`, `vercel.json`, `next.config.*`, `tsconfig.json`.
+  `package.json`, `package-lock.json`, `vercel.json`, `next.config.*`,
+  `tsconfig.json`.
 
-You can always create any of these by hand. Only the connector is barred,
-which is the boundary that matters: it means a mistaken or manipulated
-tool call cannot reach anything that executes.
+You can always create any of these by hand. Only the connector is barred.
+
+**What this does not cover.** The list above is what the connector
+refuses *by default*, and it is not the same as "nothing executable."
+An ordinary path like `scripts/build.sh`, `Makefile` or `deploy/run.sh`
+is writable, because to this connector it looks like any other file. If
+your vault has paths like that — anything a CI job, a git hook or your
+own tooling executes — **add them to `VAULT_PROTECTED_PREFIXES`**, or a
+write there could run the next time that job does. A plain notes vault
+has none of this; a vault that is also a project usually does.
 
 `VAULT_OWNER` and `VAULT_REPO` have no defaults — the server refuses every
 tool call until they're set, so a typo fails loudly instead of silently

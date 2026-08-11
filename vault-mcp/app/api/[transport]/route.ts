@@ -125,6 +125,10 @@ const PROTECTED_BASENAMES = new Set([
   // the way CLAUDE.md is, and both read as plain notes until you know.
   "qwen.md",
   "agent.md",
+  // OpenCode's project config. Not instructions — it declares MCP servers
+  // by local command, so it is `.mcp.json` without the leading dot, and
+  // the shape rule cannot see it.
+  "opencode.json",
   ".cursorrules",
   ".windsurfrules",
   ".clinerules",
