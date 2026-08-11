@@ -47,6 +47,22 @@ check("data.typ spoof does not verify as the injected kind", verifySignedToken(s
 const decoded = JSON.parse(Buffer.from(spoofed.split(".")[0], "base64url").toString()) as { exp: number };
 check("data.exp cannot extend the lifetime", decoded.exp < 9_999_999_999);
 
+// A caller-supplied toJSON would otherwise be invoked by JSON.stringify
+// in place of serializing the object, discarding the typ and exp written
+// after the spread and signing whatever it returned.
+const viaToJSON = issueSignedToken(
+  "access_token",
+  { sub: "vault-owner", toJSON: () => ({ typ: "authorization_code", exp: 9_999_999_999 }) },
+  60
+);
+const viaToJSONPayload = JSON.parse(
+  Buffer.from(viaToJSON.split(".")[0], "base64url").toString()
+) as { typ?: string; exp?: number; sub?: string };
+check("data.toJSON cannot rewrite the payload", viaToJSONPayload.typ === "access_token");
+check("data.toJSON cannot extend the lifetime", (viaToJSONPayload.exp ?? 0) < 9_999_999_999);
+check("data.toJSON does not verify as the injected kind", verifySignedToken(viaToJSON, "authorization_code") === null);
+check("data.toJSON token still verifies as its real kind", verifySignedToken(viaToJSON, "access_token") !== null);
+
 // Legacy tokens: accepted while lenient, refused once strict.
 const legacyAccess = legacyToken({ sub: "vault-owner" }, 60);
 delete process.env.OAUTH_REQUIRE_TYP;

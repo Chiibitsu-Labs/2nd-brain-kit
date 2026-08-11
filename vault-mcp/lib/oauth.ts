@@ -81,11 +81,28 @@ export function issueSignedToken(
   if (!hasSigningSecret()) {
     throw new Error("OAUTH_SIGNING_SECRET is not configured (need >= 32 chars)");
   }
-  // `typ` and `exp` are written after the spread, so a caller can never
+  // `typ` and `exp` are written after the spread, so a caller cannot
   // mislabel a token or extend its own lifetime by passing either key in
   // `data`.
-  const payload = JSON.stringify({ ...data, typ, exp: Math.floor(Date.now() / 1000) + ttlSeconds });
-  const encoded = base64url(payload);
+  const payload: Record<string, unknown> = {
+    ...data,
+    typ,
+    exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+  };
+  // Writing them last is not sufficient on its own. `data` is typed
+  // loosely enough to carry a `toJSON` method, the spread copies it as an
+  // own enumerable property, and JSON.stringify calls it *instead of*
+  // serializing the object — so a caller-supplied `toJSON` returning
+  // `{ typ: "authorization_code", exp: <far future> }` would be signed
+  // verbatim, with the assignments above silently discarded. Every caller
+  // here passes an object literal, so this is a latent defect rather than
+  // a live one; it is removed anyway, because the guarantee this function
+  // documents should hold for the caller that has not been written yet.
+  // Only an *own enumerable* `toJSON` can reach here — an inherited one
+  // is not copied by the spread, and the fresh object's prototype is
+  // Object.prototype.
+  delete payload.toJSON;
+  const encoded = base64url(JSON.stringify(payload));
   return `${encoded}.${sign(encoded)}`;
 }
 
