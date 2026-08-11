@@ -1026,7 +1026,7 @@ function isAuthorized(req: Request): boolean {
   // CLI config), or an expiring signed token issued by /api/oauth/token
   // (used by claude.ai / ChatGPT connectors).
   if (timingSafeEqualStrings(token, MCP_TOKEN)) return true;
-  const signed = verifySignedToken<{ sub?: string }>(token);
+  const signed = verifySignedToken<{ sub?: string }>(token, "access_token");
   return signed?.sub === "vault-owner";
 }
 

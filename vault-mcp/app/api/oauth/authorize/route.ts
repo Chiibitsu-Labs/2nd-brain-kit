@@ -54,7 +54,7 @@ function validateParams(params: URLSearchParams): { ok: OAuthParams } | { err: R
   const codeChallengeMethod = params.get("code_challenge_method");
   const responseType = params.get("response_type");
 
-  const client = verifySignedToken<{ redirect_uris: string[] }>(clientId);
+  const client = verifySignedToken<{ redirect_uris: string[] }>(clientId, "client_registration");
   const redirectUriIsRegistered = !!client?.redirect_uris?.includes(redirectUri);
 
   // Never redirect to a redirect_uri that hasn't been validated (open
@@ -197,6 +197,7 @@ export async function POST(req: Request) {
   // jti = unique code id, so the token endpoint can claim it exactly once
   // (single-use) when a KV store is configured.
   const code = issueSignedToken(
+    "authorization_code",
     { redirect_uri: v.ok.redirectUri, code_challenge: v.ok.codeChallenge, jti: crypto.randomUUID() },
     300
   );

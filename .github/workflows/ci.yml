@@ -45,6 +45,12 @@ jobs:
 
       - run: npx tsc --noEmit
 
+      # Behavioural tests for the signed-token layer. A typecheck cannot
+      # tell whether an authorization code is accepted where an access
+      # token belongs — the types are identical, the difference is in what
+      # the payload claims to be.
+      - run: npm test
+
       # Always print the full advisory picture, then gate.
       #
       # The gate is `critical`, not `high`, and that is a deliberate choice

@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const clientId = issueSignedToken({ redirect_uris: redirectUris }, 60 * 60 * 24 * 365);
+  const clientId = issueSignedToken("client_registration", { redirect_uris: redirectUris }, 60 * 60 * 24 * 365);
 
   return Response.json({
     client_id: clientId,

@@ -49,6 +49,30 @@ Code session with the repo attached.
    - `VAULT_OWNER` — **required**: your GitHub username (or org).
    - `VAULT_REPO` — **required**: your vault repo name.
    - `VAULT_BRANCH` (optional, defaults to `main`)
+   - `OAUTH_REQUIRE_TYP` (optional) — set to `1` **on a brand-new
+     deployment**, and leave it unset on one that was already running
+     before this shipped. Every signed string this server issues carries a
+     label saying which of the three kinds it is, and this setting makes
+     the server refuse any token that carries no label at all. A fresh
+     vault has no unlabelled tokens in circulation, so turning it on there
+     costs nothing and is strictly better.
+
+     On an **upgraded** vault it is not free, and waiting does not make it
+     free. Access tokens last 30 days, but the client registration a
+     connector stores when it first connects lasts a year — so a legacy
+     registration outlives the access token by eleven months, and turning
+     this on refuses it at the *start* of the reconnect, before the client
+     can recover on its own. The connector then has to be removed and
+     re-added (which registers it afresh) rather than simply
+     reconnecting. So: either accept that one-time removal and re-add for
+     each connected client, or leave the setting off until the
+     registrations have aged out too.
+
+     Leaving it off is a sound choice and not a lingering risk. A token
+     that declares the *wrong* kind is refused either way — that half is
+     unconditional. The only thing this setting adds is refusing tokens
+     that declare no kind at all, and every one of those was issued by
+     your own server before the upgrade.
    - `VAULT_CONNECTOR_PATH` (optional, defaults to `vault-mcp`) — **set
      this if your vault keeps the connector anywhere other than the repo
      root**, and give it the same value as the Vercel **Root Directory**
@@ -172,6 +196,13 @@ What gates what:
   origin allowlist only controls where codes can be sent, not who can ask.
 - **PKCE (S256) is mandatory**; authorization codes expire in 5 minutes
   and are bound to the redirect_uri and code challenge.
+- **Each signed string states its own kind.** Client registrations,
+  authorization codes and access tokens are all signed with the same key,
+  so the payload carries a `typ` label and every check requires the kind
+  it expects. Presenting one where another belongs is refused outright,
+  rather than depending on each endpoint happening to require a field the
+  other kinds don't carry. See `OAUTH_REQUIRE_TYP` above for the one
+  setting this adds.
 - **The GitHub PAT** is fine-grained: one repo, Contents read/write only —
   worst case if the server is fully compromised is bounded at this repo.
 - **Passphrase attempts are throttled**: 8 per caller address per 15

@@ -31,19 +31,85 @@ function sign(payload: string): string {
   return crypto.createHmac("sha256", SECRET).update(payload).digest("base64url");
 }
 
+// The three kinds of signed string this server hands out. All three are
+// signed with the same key, so without a label inside them the only thing
+// keeping one from being presented in another's place is that each
+// verifier happens to require a field the other kinds don't carry — an
+// access token has no `redirect_uri`, a client_id has no `sub`, and so
+// on. That separation holds today, but it is a property of four call
+// sites rather than of the token format, and it would quietly stop
+// holding the first time two payload shapes converged. `typ` states the
+// kind in the payload so the check is explicit and local.
+export type TokenType = "authorization_code" | "client_registration" | "access_token";
+
+// Whether a token with no `typ` at all is rejected.
+//
+// Left off by default because turning it on invalidates every token
+// issued before this shipped: live connectors would need to reconnect and
+// registered clients to re-register. A vault deployed fresh should set
+// `OAUTH_REQUIRE_TYP=1` immediately — it has no legacy tokens to break.
+//
+// On an upgraded vault, waiting does not make it free, and an earlier
+// draft of this comment claimed it did. Access tokens last 30 days but
+// client registrations last a year, so a legacy registration outlives the
+// access token by eleven months — and it is checked at the very start of
+// the authorization that would otherwise re-issue everything, so a client
+// holding one cannot reconnect its way out. Enabling this on an upgraded
+// vault means each connected client is removed and re-added once. See
+// README.md for what to tell the vault's owner.
+//
+// Leaving it off is not a lingering risk: the mismatch half below is
+// unconditional, so all this adds is refusing tokens that declare no kind
+// at all — every one of which this same server issued before the upgrade.
+//
+// Read at call time, not module load: `next dev` and the test harness
+// both mutate the environment between requests, and a module-level
+// snapshot would freeze whichever value happened to be set first.
+function requireTyp(): boolean {
+  const v = (process.env.OAUTH_REQUIRE_TYP || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 // Self-contained, signed tokens (payload + HMAC) — no database needed,
 // safe for a stateless serverless deployment. Verification just re-checks
-// the signature and an expiry embedded in the payload.
-export function issueSignedToken(data: Record<string, unknown>, ttlSeconds: number): string {
+// the signature, the embedded expiry, and the token's declared kind.
+export function issueSignedToken(
+  typ: TokenType,
+  data: Record<string, unknown>,
+  ttlSeconds: number
+): string {
   if (!hasSigningSecret()) {
     throw new Error("OAUTH_SIGNING_SECRET is not configured (need >= 32 chars)");
   }
-  const payload = JSON.stringify({ ...data, exp: Math.floor(Date.now() / 1000) + ttlSeconds });
-  const encoded = base64url(payload);
+  // `typ` and `exp` are written after the spread, so a caller cannot
+  // mislabel a token or extend its own lifetime by passing either key in
+  // `data`.
+  const payload: Record<string, unknown> = {
+    ...data,
+    typ,
+    exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+  };
+  // Writing them last is not sufficient on its own. `data` is typed
+  // loosely enough to carry a `toJSON` method, the spread copies it as an
+  // own enumerable property, and JSON.stringify calls it *instead of*
+  // serializing the object — so a caller-supplied `toJSON` returning
+  // `{ typ: "authorization_code", exp: <far future> }` would be signed
+  // verbatim, with the assignments above silently discarded. Every caller
+  // here passes an object literal, so this is a latent defect rather than
+  // a live one; it is removed anyway, because the guarantee this function
+  // documents should hold for the caller that has not been written yet.
+  // Only an *own enumerable* `toJSON` can reach here — an inherited one
+  // is not copied by the spread, and the fresh object's prototype is
+  // Object.prototype.
+  delete payload.toJSON;
+  const encoded = base64url(JSON.stringify(payload));
   return `${encoded}.${sign(encoded)}`;
 }
 
-export function verifySignedToken<T = Record<string, unknown>>(token: string): T | null {
+export function verifySignedToken<T = Record<string, unknown>>(
+  token: string,
+  expectedTyp: TokenType
+): T | null {
   if (!hasSigningSecret()) return null; // fail closed, never verify against an empty key
   const parts = token.split(".");
   if (parts.length !== 2) return null;
@@ -56,6 +122,14 @@ export function verifySignedToken<T = Record<string, unknown>>(token: string): T
     return null;
   }
   if (typeof data.exp !== "number" || data.exp < Math.floor(Date.now() / 1000)) return null;
+  // A token that declares a kind must declare *this* kind. This half is
+  // unconditional: a mismatch is never a legacy token, it is one kind
+  // being presented where another belongs.
+  if ("typ" in data) {
+    if (data.typ !== expectedTyp) return null;
+  } else if (requireTyp()) {
+    return null;
+  }
   return data as T;
 }
 
