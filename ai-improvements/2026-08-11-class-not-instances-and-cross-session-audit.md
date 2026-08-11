@@ -65,13 +65,15 @@ tags: [ai-improvement, mistake, decision]
 
 - The fix enforces one part of the rule and still enumerates the rest.
   Writes are refused to any path with a dot-leading segment, which closes
-  every tool directory including ones that do not exist yet. The
-  non-dotted files — `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md`,
-  `WARP.md`, `opencode.json` and its JSONC spelling — remain protected
-  only by being named, and a tool shipping some future `TOOL.md` would
-  reopen that side. It cannot be closed the same way: those names are
-  indistinguishable from ordinary notes, and a rule refusing all-caps
-  markdown would refuse a great many real ones.
+  dot-leading tool directories including ones that do not exist yet.
+  Everything without a leading dot is still enumeration: the instruction
+  and config files — `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md`,
+  `WARP.md`, `opencode.json` and its JSONC spelling — and non-dotted tool
+  directories too, of which this repository already has one in `tools/`,
+  protected by an explicit prefix. A future `TOOL.md` or `agent/` reopens
+  that side. It cannot be closed the way the dotted side was: those names
+  are indistinguishable from ordinary notes and folders, and a rule
+  refusing all-caps markdown would refuse a great many real ones.
 
   Restating the rule in a comment was considered and rejected as the
   whole fix, because a comment stating the class was already present and
