@@ -144,7 +144,49 @@ const PROTECTED_BASENAMES = new Set([
 const EXTRA_PROTECTED_PREFIXES = process.env.VAULT_PROTECTED_PREFIXES
   ? process.env.VAULT_PROTECTED_PREFIXES.split(",")
   : [];
-const PROTECTED_PREFIXES = [...MANDATORY_PROTECTED_PREFIXES, ...EXTRA_PROTECTED_PREFIXES]
+
+// Where this connector's own source sits inside the vault. `vault-mcp/`
+// above is the deploy button's layout and stays protected unconditionally;
+// this covers the vault that keeps it somewhere else.
+//
+// The prefixes above are matched from the start of the path, which quietly
+// assumes the connector is at the repo root. A vault that is also a
+// project — the kit's own origin vault keeps it under
+// `02_builds/tools/vault-mcp` beside four sibling builds — therefore has
+// its running server code outside every mandatory prefix, and a write
+// there is the rewrite-the-server-and-redeploy case this whole list
+// exists to prevent. Naming more roots cannot fix that; only the vault
+// knows where it put the thing.
+//
+// Set `VAULT_CONNECTOR_PATH` to the directory holding this server,
+// relative to the vault root, on any deployment whose Vercel Root
+// Directory is not `vault-mcp`. The two settings describe the same
+// location and should always be given the same value. It is *added* to
+// the mandatory list, never substituted for it, so setting it wrong
+// costs coverage of a path that was never protected anyway rather than
+// unprotecting the defaults.
+//
+// Note this is a prefix, so it protects everything under that directory —
+// in the origin vault's layout, pointing it at `02_builds/tools` covers
+// the sibling builds too, which is the more useful setting there.
+function normalizedConnectorPrefix(): string | null {
+  const raw = (process.env.VAULT_CONNECTOR_PATH || "").trim();
+  if (!raw) return null;
+  // Accept what a person would plausibly type — "./x", "/x", "x/" — and
+  // reject anything that isn't a plain relative directory rather than
+  // silently protecting a path that means something else.
+  const cleaned = raw.replace(/\\/g, "/").replace(/^\.?\/+/, "").replace(/\/+$/, "");
+  if (!cleaned || cleaned.startsWith("/")) return null;
+  if (cleaned.split("/").some((seg) => seg === "" || seg === "." || seg === "..")) return null;
+  return cleaned + "/";
+}
+const CONNECTOR_PREFIX = normalizedConnectorPrefix();
+
+const PROTECTED_PREFIXES = [
+  ...MANDATORY_PROTECTED_PREFIXES,
+  ...(CONNECTOR_PREFIX ? [CONNECTOR_PREFIX] : []),
+  ...EXTRA_PROTECTED_PREFIXES,
+]
   .map((s) => s.trim())
   .filter(Boolean);
 const PROTECTED_ROOT_FILES = new Set([

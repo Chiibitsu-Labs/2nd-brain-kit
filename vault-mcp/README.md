@@ -73,6 +73,28 @@ Code session with the repo attached.
      unconditional. The only thing this setting adds is refusing tokens
      that declare no kind at all, and every one of those was issued by
      your own server before the upgrade.
+   - `VAULT_CONNECTOR_PATH` (optional, defaults to `vault-mcp`) — **set
+     this if your vault keeps the connector anywhere other than the repo
+     root**, and give it the same value as the Vercel **Root Directory**
+     in step 1. They name the same folder.
+
+     It matters because the protections below are matched from the start
+     of the path, which assumes the connector sits at the root — the
+     layout the deploy button produces. A vault that is also a project
+     (say the connector lives at `02_builds/tools/vault-mcp`) has its
+     running server code outside every one of them, and a write there
+     rewrites the server and redeploys it. Setting this restores that
+     protection wherever the connector actually lives. Set the *same*
+     value as a repository variable of that name (Settings → Secrets and
+     variables → Actions → Variables) and the kit's template sync will
+     also update the right copy instead of creating an unused one at the
+     root.
+
+     It only ever *adds* a protected prefix, so a wrong value costs
+     coverage of a path that was never protected anyway rather than
+     unprotecting the defaults. It is a prefix, so pointing it at a
+     parent (`02_builds/tools`) protects the siblings too, which is
+     usually what such a vault wants.
    - `VAULT_PROTECTED_PREFIXES` (optional) — comma-separated *extra* path
      prefixes the connector refuses to write to, on top of the mandatory
      protections described below. It can only add, never remove one of
@@ -104,7 +126,9 @@ switch and the first sign of a clash is a refused write.
   handing over a shell than to editing a document.
 - **The server's own code and deploy config** — `vault-mcp/`, `tools/`,
   `package.json`, `package-lock.json`, `vercel.json`, `next.config.*`,
-  `tsconfig.json`.
+  `tsconfig.json`. These are matched from the **repo root**: if your
+  connector lives somewhere else, set `VAULT_CONNECTOR_PATH` (above) or
+  it is not covered by this line.
 
 You can always create any of these by hand. Only the connector is barred.
 

@@ -78,6 +78,14 @@ jobs:
             "https://github.com/${UPSTREAM_REPO}.git" .template-upstream
 
       - name: Copy kit-managed paths from upstream
+        env:
+          # Through the environment, never interpolated into the script
+          # body: `${{ vars.X }}` is substituted as text before bash sees
+          # the file, so a repository variable containing shell syntax
+          # would be executed rather than compared. Only a repo admin can
+          # set one, but "only the owner can exploit it" is not a reason
+          # to write an injectable line.
+          CONNECTOR_PATH_INPUT: ${{ vars.VAULT_CONNECTOR_PATH }}
         run: |
           set -euo pipefail
           # Pure mechanism files with no expectation a client hand-edits
@@ -105,9 +113,52 @@ jobs:
             ".github/scripts/test-improve-hook.sh"
             ".gitignore"
             "BACKUP.md"
-            "vault-mcp"
           )
-          for p in "${FORCE_SYNC_PATHS[@]}"; do
+          # The connector, whose destination is configurable while its
+          # source upstream never moves.
+          #
+          # Syncing it to the literal path "vault-mcp" assumed every vault
+          # keeps the connector at its root, which is what the deploy
+          # button produces but not what a vault that is also a project
+          # looks like — this kit's own origin vault keeps it under
+          # 02_builds/tools/. There the old behaviour created a fresh
+          # copy at the root and never touched the running connector,
+          # while the sync PR reported success: the worst shape a delivery
+          # failure can take, since it looks like it worked.
+          #
+          # Set a repository variable VAULT_CONNECTOR_PATH (Settings →
+          # Secrets and variables → Actions → Variables) to the directory
+          # holding the connector, and give the connector's own
+          # VAULT_CONNECTOR_PATH environment variable the same value — one
+          # location, described once. On the deployment side that value is
+          # also what keeps the write guard's protection over the
+          # connector's source, which is anchored at the vault root and so
+          # does not reach a connector kept in a subdirectory.
+          CONNECTOR_DEST="${CONNECTOR_PATH_INPUT:-vault-mcp}"
+          # Strip every trailing slash, not one: "a//" would otherwise
+          # survive as "a/" and reach the checks below still looking like
+          # a different string than "a".
+          while [ "$CONNECTOR_DEST" != "${CONNECTOR_DEST%/}" ]; do
+            CONNECTOR_DEST="${CONNECTOR_DEST%/}"
+          done
+          # Reject anything that isn't a plain relative directory rather
+          # than letting a stray value drive `rm -rf` at an unintended
+          # path. Falling back is safe: the default is the layout every
+          # button-deployed vault has.
+          case "$CONNECTOR_DEST" in
+            "" | /* | *..* | *"*"* | *'$'* | *'`'* )
+              echo "VAULT_CONNECTOR_PATH='$CONNECTOR_DEST' is not a plain relative directory — using 'vault-mcp'."
+              CONNECTOR_DEST="vault-mcp"
+              ;;
+          esac
+          echo "Connector destination: $CONNECTOR_DEST"
+          # Later steps run in their own shells, so the resolved value has
+          # to be handed on explicitly — a step that copied to the
+          # configured path but staged the default one would produce a
+          # sync PR missing the only file that matters.
+          echo "CONNECTOR_DEST=$CONNECTOR_DEST" >> "$GITHUB_ENV"
+
+          for p in "${FORCE_SYNC_PATHS[@]}" ; do
             src=".template-upstream/$p"
             if [ ! -e "$src" ]; then
               echo "Upstream no longer has '$p' — leaving the local copy alone (not deleting)."
@@ -117,6 +168,16 @@ jobs:
             rm -rf "$p"
             cp -r "$src" "$p"
           done
+
+          # Same force-sync treatment, separate because only this one has
+          # a destination that differs from its source.
+          if [ -e ".template-upstream/vault-mcp" ]; then
+            mkdir -p "$(dirname "$CONNECTOR_DEST")"
+            rm -rf "$CONNECTOR_DEST"
+            cp -r ".template-upstream/vault-mcp" "$CONNECTOR_DEST"
+          else
+            echo "Upstream no longer has 'vault-mcp' — leaving the local connector alone (not deleting)."
+          fi
 
           # Delivered once, then left alone forever. This file's own
           # "Customize me" section explicitly invites the client to edit
@@ -192,7 +253,13 @@ jobs:
         id: diff
         run: |
           set -euo pipefail
-          git add -A -- .claude .gitignore BACKUP.md vault-mcp
+          git add -A -- .claude .gitignore BACKUP.md
+          # Separate and guarded, like the two below: the copy step skips
+          # the connector entirely if upstream no longer ships one, and a
+          # `git add -A -- <path>` naming a path that matches neither a
+          # working-tree file nor a tracked deletion exits 128 and would
+          # abort the run under set -e.
+          git add -A -- "$CONNECTOR_DEST" 2>/dev/null || true
           # Separate call: on the common path where this file has never
           # existed, `git add -A -- <path>` errors with "pathspec ... did
           # not match any files" (exit 128) since the path matches neither

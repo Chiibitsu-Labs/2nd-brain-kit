@@ -193,6 +193,72 @@ OUT="$(run_hook "$V")"
 ! grep -q "SLUGLESSDOC" <<<"$OUT"; check "slugless dated file not loaded as a note" "$?"
 grep -q "NOTEBODY-2026-08-08-b" <<<"$OUT"; check "no real note evicted by a slugless date" "$?"
 
+# 13. A vault that keeps its notes somewhere else. The paths were
+#     hardcoded in a force-synced file, so such a vault could not change
+#     them and got no notes, no error, and a clean exit 0 — output
+#     indistinguishable from a vault that simply has none yet.
+V="$WORK/relocated"; make_vault "$V" with_security
+mkdir -p "$V/03_notes/improvements" "$V/03_notes"
+echo "- [[2026-08-10-x]] — summary (2026-08-10)" > "$V/03_notes/Improvements Index.md"
+for d in 2026-08-08-b 2026-08-09-c 2026-08-10-d; do
+  echo "MOVEDNOTE-$d" > "$V/03_notes/improvements/$d.md"
+done
+printf '# where this vault keeps them\nentries_dir=03_notes/improvements\nindex_file=03_notes/Improvements Index.md\n' \
+  > "$V/.claude/improve.paths"
+OUT="$(run_hook "$V")"
+grep -q "MOVEDNOTE-2026-08-10-d" <<<"$OUT"; check "configured entries_dir is loaded" "$?"
+[[ "$(grep -c "MOVEDNOTE-" <<<"$OUT")" == "3" ]]; check "all configured notes loaded" "$?"
+grep -q "Improvements Index" <<<"$OUT" || grep -q "2026-08-10-x" <<<"$OUT"
+check "configured index_file is read" "$?"
+! grep -qi "path problem" <<<"$OUT"; check "correct config reports no problem" "$?"
+
+#     Same fixture without the config file: the notes exist and none load.
+#     That is the shipped behaviour this change exists to end, so assert
+#     the loader now says so rather than passing silently.
+rm "$V/.claude/improve.paths"
+OUT="$(run_hook "$V")"
+! grep -q "MOVEDNOTE-" <<<"$OUT"; check "unconfigured relocated vault loads nothing" "$?"
+grep -qi "path problem" <<<"$OUT"; check "unconfigured relocated vault says so" "$?"
+grep -q "03_notes" <<<"$OUT" || grep -q "ai-improvements" <<<"$OUT"
+check "the problem report names a path" "$?"
+
+# 14. A fresh vault has neither file and is not misconfigured. Warning
+#     there would put a complaint in every session of the vault that has
+#     nothing to say yet.
+V="$WORK/fresh"; make_vault "$V" with_security
+OUT="$(run_hook "$V")"
+! grep -qi "path problem" <<<"$OUT"; check "fresh vault reports no path problem" "$?"
+grep -qi "SECURITY.md" <<<"$OUT"; check "fresh vault still gets the rules pointer" "$?"
+
+# 15. An index with no notes directory is unambiguous — the vault has
+#     written notes before, so the directory should be there.
+V="$WORK/lostdir"; make_vault "$V" with_security with_index
+rmdir "$V/ai-improvements"
+OUT="$(run_hook "$V")"
+grep -qi "path problem" <<<"$OUT"; check "missing entries dir is reported" "$?"
+
+# 16. The config selects which file is read into every session's context,
+#     so a value escaping the vault must be refused rather than resolved.
+V="$WORK/escape"; make_vault "$V" with_security with_index with_notes
+mkdir -p "$WORK/outside"
+echo "OUTSIDENOTE" > "$WORK/outside/2026-08-10-x.md"
+printf 'entries_dir=../outside\n' > "$V/.claude/improve.paths"
+OUT="$(run_hook "$V")"
+! grep -q "OUTSIDENOTE" <<<"$OUT"; check "traversal in entries_dir refused" "$?"
+grep -q "NOTEBODY-" <<<"$OUT"; check "refused value falls back to the default" "$?"
+printf 'entries_dir=/etc\n' > "$V/.claude/improve.paths"
+OUT="$(run_hook "$V")"
+grep -q "NOTEBODY-" <<<"$OUT"; check "absolute entries_dir refused" "$?"
+
+# 17. A path with spaces is ordinary in an Obsidian vault, and a trailing
+#     space is invisible in an editor.
+V="$WORK/spacey"; make_vault "$V" with_security with_index
+mkdir -p "$V/My Notes/AI Improvements"
+echo "SPACENOTE" > "$V/My Notes/AI Improvements/2026-08-10-x.md"
+printf 'entries_dir=My Notes/AI Improvements  \n' > "$V/.claude/improve.paths"
+OUT="$(run_hook "$V")"
+grep -q "SPACENOTE" <<<"$OUT"; check "entries_dir with spaces loads" "$?"
+
 echo
 echo "passed: $PASS  failed: $FAIL"
 [[ "$FAIL" -eq 0 ]]
