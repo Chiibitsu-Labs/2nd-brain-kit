@@ -260,6 +260,30 @@ function protectionKey(p: string): string {
 
 function protectedWriteReason(norm: string): string | null {
   const normLower = protectionKey(norm);
+  // The class rule. Everything below this point is an enumeration, and
+  // enumerating vendors has now lost the race twice: the first version
+  // named CLAUDE.md, AGENTS.md and .mcp.json and left seven other
+  // agents' instruction files writable; the version that added those
+  // seven by filename still left their *directory* formats open —
+  // .windsurf/rules/, .clinerules/, .gemini/settings.json (which
+  // declares MCP servers by command), .roo/, .kilocode/, .zed/, .idea/.
+  // Each round covered the tools someone happened to think of.
+  //
+  // The shape is what is actually invariant: developer tooling keeps its
+  // configuration in dot-directories and dotfiles, and a notes connector
+  // has no legitimate reason to write one — notes live in ordinary
+  // folders. Refusing the shape closes the tools nobody has heard of yet,
+  // which is the only version of this that survives a vault being opened
+  // in an editor the author never used.
+  //
+  // Deliberately conservative: it refuses more than it must. A vault
+  // owner can still create any of these by hand; only this connector is
+  // barred, which is the boundary that matters.
+  for (const seg of norm.split("/")) {
+    if (seg.startsWith(".")) {
+      return `'${norm}' is a dotfile or sits inside a dot-directory; those hold tool configuration and auto-loaded instructions, and this connector only manages notes`;
+    }
+  }
   if (PROTECTED_ROOT_FILES.has(normLower)) return `'${norm}' is a protected config file`;
   // Basename check, so a memory file is caught at any depth. protectionKey
   // has already folded case and trailing dots/spaces, so the segment it
