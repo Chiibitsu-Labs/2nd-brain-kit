@@ -1,0 +1,84 @@
+---
+date: 2026-08-11
+project: 2nd-brain-kit (pre-handover hardening, cross-session audit)
+source: claude-code
+tags: [ai-improvement, mistake, decision]
+---
+
+## AI mistakes
+
+- Asked to consult another Claude session, the reply given was that a
+  session's assurance is not evidence and the repository is the artifact.
+  The principle holds; applying it before looking at what was actually at
+  the other end did not. The session turned out to be the one that owns
+  the vibeOS protocol documents, sitting idle and blocked, with a status
+  line offering to attach this repo read-only and audit it. It was not a
+  peer to ask for reassurance — it was a reviewer with context this repo
+  cannot supply, and dismissing the channel on a general rule nearly
+  discarded a real audit. The audit it then produced found a live hole.
+- A claim that the OAuth token deferrals existed "only in a PR thread,
+  not in any durable record" was wrong. The vibeOS session reports them
+  ticketed in its own `ops/tasks.md`. The error came from treating this
+  repository as the whole record when the system spans several: a
+  deferral can be properly ticketed somewhere this session cannot see.
+  Claims about what is recorded were scoped to "in this tree" everywhere
+  else in these notes, and that scoping was dropped for this one.
+- The write guard's protected-name list was found to enumerate one
+  vendor's filenames rather than the class the guard's own refusal
+  message names — "loaded as instructions by agents reading this vault."
+  Reproduced by driving the real `resolveVaultPath` and
+  `protectedWriteReason`: `.cursorrules`, `.cursor/rules/*.mdc`,
+  `.windsurfrules`, `GEMINI.md`, `.clinerules`, `.continue/config.json`
+  and `.aider.conf.yml` were all writable. Each is loaded verbatim as
+  standing instructions by some agent.
+
+  This is the same finding as the earlier "the fence is bypassable by
+  filename", which was closed by adding three names — `CLAUDE.md`,
+  `AGENTS.md`, `.mcp.json`. Naming the instances an audit happened to
+  list left the class open, so the finding stayed closed only while the
+  vault was opened in the editors those names cover. The same pattern
+  had already been recorded twice in prose notes; this instance was in
+  code, with a security consequence, and was found by an outside reviewer
+  rather than by the sweep the earlier notes describe.
+
+  A second instance sat beside it: `.obsidian/plugins/` was protected, so
+  the connector could not ship plugin JavaScript, while
+  `.obsidian/community-plugins.json` — the list of *enabled* plugins —
+  was writable, allowing a dormant plugin already on disk to be switched
+  on without writing any executable code.
+
+## Decisions
+
+- The fix states the rule above the list — any file an agent tool
+  auto-loads as instructions, or that configures what such a tool runs,
+  belongs there regardless of vendor — with the enumeration positioned as
+  an incomplete expression of it. The reasoning: this defect has now
+  recurred twice by adding names, and a list with no stated rule gives a
+  later reader nothing to test a new filename against.
+- Six vendors were covered and the gap was left open and named rather
+  than quietly bounded: Zed, JetBrains AI, Amp, Roo and Kilo were not
+  attempted, and the review request said so.
+- The `typ` claim on OAuth tokens was not added, though the vibeOS
+  session recommended it before handover and the reasoning was accepted.
+  Requiring `typ` invalidates every token already issued, including the
+  owner's live session, which makes it a breaking change rather than a
+  hardening tweak, and the owner was away.
+- Whether a deferred risk is acceptable was treated as depending on who
+  bears it. The OAuth deferrals — 30-day TTL, constant `sub`, no `jti`,
+  one signing secret across three token types — were arbitrated when the
+  owner was the only person exposed. A third party deploying the kit
+  changes that premise without changing the code, so the same deferral
+  needs a fresh decision rather than inheriting the old one.
+- The note for this session was written on a branch cut from `main`
+  rather than onto the open pull request, so the note commit could not
+  reset the review count on a security fix awaiting its passes.
+
+## Other
+
+- A restore drill was run against `backup/2026-W33`, the first restore
+  this vault has evidence of. The documented path worked: the tag checked
+  out into a clean clone, all nine markdown files present and non-empty,
+  and `daily/` and `notes/` byte-identical to `main`. The gap found was
+  freshness rather than integrity — the snapshot was 54 commits behind,
+  both existing tags pointed at the same commit, and it predated the
+  committed lockfile, so a restored connector would fail `npm ci`.
