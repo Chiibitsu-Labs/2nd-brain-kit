@@ -28,8 +28,12 @@ tags: [ai-improvement, mistake, decision]
   guard's own refusal message names — "loaded as instructions by agents
   reading this vault." Not a single-vendor list: it already held Claude
   Code's memory files, Codex's `AGENTS.md` and `.codex/`, `.mcp.json` and
-  `.devcontainer.json`. Breadth across vendors is what made it look
-  complete while the rule stayed unstated.
+  `.devcontainer.json`. The rule was not missing either: the comment
+  immediately above the list already said the set covered files loaded as
+  instructions by agents, anywhere in the tree. Stating the rule and
+  listing several vendors is what made it look complete — the gap was
+  that nothing enforced the rule except the list, so every tool outside
+  it walked through a guard that described the right boundary.
   Reproduced by driving the real `resolveVaultPath` and
   `protectedWriteReason`: `.cursorrules`, `.cursor/rules/*.mdc`,
   `.windsurfrules`, `GEMINI.md`, `.clinerules`, `.continue/config.json`
