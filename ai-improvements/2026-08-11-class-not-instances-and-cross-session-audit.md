@@ -63,14 +63,21 @@ tags: [ai-improvement, mistake, decision]
 
 ## Decisions
 
-- The fix enforces the rule rather than restating it: writes are refused
-  to any path with a dot-leading segment, which covers tool directories
-  that do not exist yet. Restating the rule in a comment was considered
-  and rejected as the whole fix, because a comment stating the class was
-  already there and had not stopped the enumeration from falling behind
-  it. The comment above the list was still expanded, as documentation of
-  what the check enforces — useful only because something now enforces
-  it.
+- The fix enforces one part of the rule and still enumerates the rest.
+  Writes are refused to any path with a dot-leading segment, which closes
+  every tool directory including ones that do not exist yet. The
+  non-dotted files — `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md`,
+  `WARP.md`, `opencode.json` and its JSONC spelling — remain protected
+  only by being named, and a tool shipping some future `TOOL.md` would
+  reopen that side. It cannot be closed the same way: those names are
+  indistinguishable from ordinary notes, and a rule refusing all-caps
+  markdown would refuse a great many real ones.
+
+  Restating the rule in a comment was considered and rejected as the
+  whole fix, because a comment stating the class was already present and
+  had not stopped the enumeration falling behind it. The comment was
+  still expanded, as documentation of what the check enforces — useful
+  only because something now enforces part of it.
 - Six vendors were covered and the gap was left open and named rather
   than quietly bounded: Zed, JetBrains AI, Amp, Roo and Kilo were not
   attempted, and the review request said so.
