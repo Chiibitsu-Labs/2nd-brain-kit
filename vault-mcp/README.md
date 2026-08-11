@@ -68,14 +68,16 @@ switch and the first sign of a clash is a refused write.
   A notes connector has no reason to write one. **If you keep notes or
   attachments in a hidden folder, move them somewhere ordinary** — the
   connector cannot write them where they are.
-- **Files agents load as standing instructions or tool config, at any
-  depth** — `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`,
-  `AGENTS.override.md`, `AGENT.md`, `GEMINI.md`, `QWEN.md`,
-  `opencode.json`, `.mcp.json`, `.devcontainer.json`. The first group is
-  injected into an assistant's context verbatim, so a write there is a
-  write into every future session's instructions; the last three declare
-  servers or commands to launch. Note this applies at any depth: a note
-  of your own named exactly `Claude.md` or `Gemini.md` is refused too.
+- **Files agents load as standing instructions, at any depth** —
+  `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`,
+  `AGENT.md`, `GEMINI.md`, `QWEN.md`, `WARP.md`. These are injected into
+  an assistant's context verbatim, so a write there is a write into every
+  future session's instructions. This applies at any depth: a note of
+  your own named exactly `Claude.md` or `Gemini.md` is refused too.
+- **Files that declare what a tool launches, at any depth** —
+  `.mcp.json`, `opencode.json`, `opencode.jsonc`, `.devcontainer.json`.
+  These name servers or commands to run, so a write there is closer to
+  handing over a shell than to editing a document.
 - **The server's own code and deploy config** — `vault-mcp/`, `tools/`,
   `package.json`, `package-lock.json`, `vercel.json`, `next.config.*`,
   `tsconfig.json`.
