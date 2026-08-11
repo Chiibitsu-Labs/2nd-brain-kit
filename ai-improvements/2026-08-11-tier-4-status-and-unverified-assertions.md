@@ -33,9 +33,10 @@ tags: [ai-improvement, mistake, decision]
   generalised from context instead of read off the artifact that decides
   it. The second instance was in a different domain from the first,
   after the first had been written down.
-- The status of two `claude/*` branches was reported to the owner three
-  times and revised twice, and the version that survived is the first
-  one. Called open work on `git branch -r --no-merged`; corrected to
+- The status of two `claude/*` branches was reported to the owner four
+  times — an initial answer and three revisions — and the version that
+  survived is the first one. Called open work on
+  `git branch -r --no-merged`; corrected to
   "stale" from a grep suggested by a branch name; corrected again to
   "one carries 21 unmerged lines" after comparing file contents at the
   two tips; corrected a third time by review, back to stale. Settled by
@@ -83,15 +84,24 @@ tags: [ai-improvement, mistake, decision]
   working tree were the pre-merge ones.
 
 - This note took three review rounds and nine findings before it was
-  accurate, and the shape of them is the record worth keeping. Every
-  round found the same class — a claim stated past its evidence — and
-  most instances were introduced *by the previous round's fix*: the
-  three-dot explanation was written inside a correction of that same
-  misconception and got the direction backwards; the index summary kept a
-  claim the commit beside it disproved; an unqualified operational claim
-  sat two paragraphs below two that had just been narrowed. Rounds two
-  and three were spent on siblings of round one's findings rather than on
-  anything new.
+  accurate, and the split between them is the record worth keeping.
+  Every round found the same class — a claim stated past its evidence —
+  but the nine divide unevenly, and review had to correct the summary
+  written here too:
+  - **Six were in the first commit** (`a3d7056`) and survived earlier
+    rounds unnoticed: three found in round one, and three more — the
+    index summary, the live-deployment assertion, the branch-status
+    inference — found in round two, having sat untouched through round
+    one's fixes.
+  - **Three were introduced by fixes**: the `authorize` coverage claim in
+    `faa5beb`, and in `d736eee` both the "21 unmerged lines" conclusion
+    and the reversed three-dot explanation — the latter written inside a
+    correction of that same misconception.
+
+  So the dominant failure was not writing new errors while fixing old
+  ones; it was fixing the instances named and not sweeping the file for
+  their siblings. Rounds two and three were mostly spent on claims that
+  had been there from the start.
 
   The instrument error underneath: comparing file contents at two tips
   answers whether they differ, not which side is ahead, and "differs" was
