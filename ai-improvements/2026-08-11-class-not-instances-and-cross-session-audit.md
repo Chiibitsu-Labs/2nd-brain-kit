@@ -23,9 +23,13 @@ tags: [ai-improvement, mistake, decision]
   deferral can be properly ticketed somewhere this session cannot see.
   Claims about what is recorded were scoped to "in this tree" everywhere
   else in these notes, and that scoping was dropped for this one.
-- The write guard's protected-name list was found to enumerate one
-  vendor's filenames rather than the class the guard's own refusal
-  message names — "loaded as instructions by agents reading this vault."
+- The write guard's protected-name list was found to enumerate the
+  instances its authors already knew about rather than the class the
+  guard's own refusal message names — "loaded as instructions by agents
+  reading this vault." Not a single-vendor list: it already held Claude
+  Code's memory files, Codex's `AGENTS.md` and `.codex/`, `.mcp.json` and
+  `.devcontainer.json`. Breadth across vendors is what made it look
+  complete while the rule stayed unstated.
   Reproduced by driving the real `resolveVaultPath` and
   `protectedWriteReason`: `.cursorrules`, `.cursor/rules/*.mdc`,
   `.windsurfrules`, `GEMINI.md`, `.clinerules`, `.continue/config.json`
