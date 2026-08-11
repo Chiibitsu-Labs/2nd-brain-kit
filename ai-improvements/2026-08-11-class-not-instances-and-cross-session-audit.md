@@ -26,9 +26,10 @@ tags: [ai-improvement, mistake, decision]
 - The write guard's protected-name list was found to enumerate the
   instances its authors already knew about rather than the class the
   guard's own refusal message names — "loaded as instructions by agents
-  reading this vault." Not a single-vendor list: it already held Claude
-  Code's memory files, Codex's `AGENTS.md` and `.codex/`, `.mcp.json` and
-  `.devcontainer.json`. The rule was not missing either: the comment
+  reading this vault." Not a single-vendor list: the basenames already
+  held Claude Code's memory files, Codex's `AGENTS.md`, `.mcp.json` and
+  `.devcontainer.json`, and `.codex/` was covered separately as a
+  protected prefix. The rule was not missing either: the comment
   immediately above the list already said the set covered files loaded as
   instructions by agents, anywhere in the tree. Stating the rule and
   listing several vendors is what made it look complete — the gap was
@@ -62,12 +63,14 @@ tags: [ai-improvement, mistake, decision]
 
 ## Decisions
 
-- The fix states the rule above the list — any file an agent tool
-  auto-loads as instructions, or that configures what such a tool runs,
-  belongs there regardless of vendor — with the enumeration positioned as
-  an incomplete expression of it. The reasoning: this defect has now
-  recurred twice by adding names, and a list with no stated rule gives a
-  later reader nothing to test a new filename against.
+- The fix enforces the rule rather than restating it: writes are refused
+  to any path with a dot-leading segment, which covers tool directories
+  that do not exist yet. Restating the rule in a comment was considered
+  and rejected as the whole fix, because a comment stating the class was
+  already there and had not stopped the enumeration from falling behind
+  it. The comment above the list was still expanded, as documentation of
+  what the check enforces — useful only because something now enforces
+  it.
 - Six vendors were covered and the gap was left open and named rather
   than quietly bounded: Zed, JetBrains AI, Amp, Roo and Kilo were not
   attempted, and the review request said so.
