@@ -30,10 +30,25 @@ tags: [ai-improvement, mistake, decision]
   it. The second instance was in a different domain from the first,
   after the first had been written down.
 - Two branches were reported to the owner as open work "not from this
-  session", based on the output of `git branch -r --no-merged`. The
-  passphrase-throttling code those branch names describe was already on
-  `main`, so the branches were stale rather than live, and the report was
-  corrected in the following message.
+  session", based on `git branch -r --no-merged`. That was then corrected
+  to "stale rather than live" on the strength of a single grep showing
+  passphrase-throttling code on `main` — a guess about branch contents
+  from a branch name. Review asked for the refs and the comparison, and
+  the comparison found the second correction was also half wrong:
+  - `claude/throttle-passphrase-attempts` (tip `343799f`): every file it
+    touches — `lib/ratelimit.ts`, `lib/samesite.ts`, `lib/kv.ts`,
+    `oauth/authorize/route.ts`, `vault-mcp/README.md` — is byte-identical
+    to `main`. Its work is landed.
+  - `claude/surface-auth-failures` (tip `0216d70`): its version of
+    `app/api/[transport]/route.ts` differs from `main` by 21 lines
+    present only on the branch. It carries unmerged work.
+
+  Both branches are based on an older `main`, which is why
+  `git diff origin/main...origin/<branch>` reports 531 and 336 changed
+  lines: three-dot compares from the merge base, so most of that total is
+  `main`'s own later work, not the branch's. Reading either the raw count
+  or the branch name would have given the wrong answer in a different
+  direction; comparing file contents at the two tips gave this one.
 - A branch for this note was created with `git checkout -b <name>
   origin/main` against a stale remote-tracking ref, landing on the
   pre-merge base from before the security work. The working tree then
@@ -64,6 +79,8 @@ tags: [ai-improvement, mistake, decision]
   the alternative was leaving a reviewed branch unmerged. The preceding
   code fix had been authorised by name.
 - Tier 4 was assessed but not started. Of its items, the restore drill
-  and error alerting were identified as the two that do not depend on the
-  kit reaching a client vault, since the connector is already deployed
-  and holds live credentials.
+  and error alerting were identified as the two least dependent on the
+  kit reaching a client vault, on the reasoning that the connector is
+  built to run with a GitHub token, an OAuth signing secret and an owner
+  passphrase — which the tree shows in `vault-mcp/`, though whether a
+  deployed instance holds live values is not something it can establish.
