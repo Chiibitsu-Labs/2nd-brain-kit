@@ -39,7 +39,7 @@ tags: [ai-improvement, mistake, decision]
   the class rather than a list of members, so a tool whose files matched
   no entry in any of the three sets met a guard that described the right
   boundary and did not apply it. What those sets contained is in the
-  repository at `a41ae87`, which is where a reader should go for it.
+  repository at `a41ae87`.
   Reproduced by driving the real `resolveVaultPath` and
   `protectedWriteReason`: `.cursorrules`, `.cursor/rules/*.mdc`,
   `.windsurfrules`, `GEMINI.md`, `.clinerules`, `.continue/config.json`
