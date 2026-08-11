@@ -125,10 +125,14 @@ const PROTECTED_BASENAMES = new Set([
   // the way CLAUDE.md is, and both read as plain notes until you know.
   "qwen.md",
   "agent.md",
+  "warp.md",
   // OpenCode's project config. Not instructions — it declares MCP servers
   // by local command, so it is `.mcp.json` without the leading dot, and
-  // the shape rule cannot see it.
+  // the shape rule cannot see it. Both spellings: JSONC is a supported
+  // variant, and protecting one spelling of a config file is the same
+  // mistake as protecting one spelling of a memory file.
   "opencode.json",
+  "opencode.jsonc",
   ".cursorrules",
   ".windsurfrules",
   ".clinerules",
