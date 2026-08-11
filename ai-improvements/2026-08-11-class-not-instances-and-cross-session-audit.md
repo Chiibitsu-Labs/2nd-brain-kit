@@ -29,8 +29,13 @@ tags: [ai-improvement, mistake, decision]
   Reproduced by driving the real `resolveVaultPath` and
   `protectedWriteReason`: `.cursorrules`, `.cursor/rules/*.mdc`,
   `.windsurfrules`, `GEMINI.md`, `.clinerules`, `.continue/config.json`
-  and `.aider.conf.yml` were all writable. Each is loaded verbatim as
-  standing instructions by some agent.
+  and `.aider.conf.yml` were all writable. They divide into two kinds,
+  and the first draft of this note collapsed them: `.cursorrules`,
+  `.cursor/rules/*.mdc`, `.windsurfrules`, `GEMINI.md` and `.clinerules`
+  are loaded verbatim as standing instructions, while
+  `.continue/config.json` and `.aider.conf.yml` are configuration —
+  dangerous because they set what a tool runs and which models and
+  servers it reaches, not because their text is read as a directive.
 
   This is the same finding as the earlier "the fence is bypassable by
   filename", which was closed by adding three names — `CLAUDE.md`,
@@ -63,12 +68,13 @@ tags: [ai-improvement, mistake, decision]
   Requiring `typ` invalidates every token already issued, including the
   owner's live session, which makes it a breaking change rather than a
   hardening tweak, and the owner was away.
-- Whether a deferred risk is acceptable was treated as depending on who
-  bears it. The OAuth deferrals — 30-day TTL, constant `sub`, no `jti`,
-  one signing secret across three token types — were arbitrated when the
-  owner was the only person exposed. A third party deploying the kit
-  changes that premise without changing the code, so the same deferral
-  needs a fresh decision rather than inheriting the old one.
+- The OAuth deferrals — 30-day TTL, constant `sub`, no `jti`, one signing
+  secret across three token types — were arbitrated at a time when the
+  owner was the only person exposed to them. When a third party's
+  deployment came up, this session judged that the premise behind that
+  arbitration had changed although the code had not, and put the question
+  back to the owner rather than treating the earlier decision as still
+  settled. The owner had not answered at the time of writing.
 - The note for this session was written on a branch cut from `main`
   rather than onto the open pull request, so the note commit could not
   reset the review count on a security fix awaiting its passes.
