@@ -37,12 +37,23 @@ const MANDATORY_PROTECTED_PREFIXES = [
   "vault-mcp/",
   "tools/",
   ".claude/",
-  ".obsidian/plugins/",
+  // The whole Obsidian config folder, not just plugins/. Protecting only
+  // `.obsidian/plugins/` stopped the connector shipping plugin JS but
+  // left `.obsidian/community-plugins.json` — the *enabled* list —
+  // writable, so a plugin already sitting dormant on disk could be
+  // switched on by a write that never touched executable code. app.json,
+  // hotkeys.json and snippets/ are the same shape, lower yield. A notes
+  // connector has no business anywhere in this folder.
+  ".obsidian/",
   // Editor-managed folders that run commands on open or on container
   // build. They aren't server code, but they're the same class of thing
   // as .claude/: files a human never re-reads that something executes.
   ".vscode/",
   ".devcontainer/",
+  // Rule/config directories for coding agents. Same channel as the
+  // instruction *files* below, just discovered by directory.
+  ".cursor/",
+  ".continue/",
   // Codex reads .codex/config.toml for trusted-repository settings —
   // sandbox policy, MCP servers, hooks — so it configures what runs in a
   // later session just as surely as a hook script does.
@@ -80,12 +91,54 @@ const MANDATORY_PROTECTED_PREFIXES = [
 // run on container build. Missing a spelling reopens the whole path, so
 // these track what the tools actually accept rather than what looks
 // canonical.
+//
+// THE RULE THIS LIST IMPLEMENTS: any file that an agent tool auto-loads
+// as instructions, or that configures what such a tool runs, belongs
+// here — regardless of which vendor ships it. The list below is an
+// enumeration of that rule, and an enumeration is the weakest possible
+// way to express it, so read the rule first and add to the list second.
+//
+// This distinction is not theoretical. An earlier round closed the
+// "fence is bypassable by filename" finding by adding three names —
+// CLAUDE.md, AGENTS.md, .mcp.json — which fixed the instances an audit
+// happened to name and left the class open. Verified by execution: at
+// that point `.cursorrules`, `.windsurfrules`, `GEMINI.md`,
+// `.clinerules`, `.aider.conf.yml`, `.cursor/rules/*.mdc` and
+// `.continue/config.json` were all still writable, every one of them a
+// file some agent loads verbatim as standing instructions.
+//
+// It matters most where the toolchain is unknown. This kit is deployed
+// by people whose editor nobody here can see, so "Claude Code and Codex
+// are covered" is not a property of the vault — it is a property of one
+// operator's habits. Cover the class.
 const PROTECTED_BASENAMES = new Set([
   "claude.md",
   "claude.local.md",
   "agents.md",
   "agents.override.md",
   ".mcp.json",
+  // Other vendors' instruction files, same channel, same consequence.
+  // The non-dotted ones are the load-bearing entries now: the shape rule
+  // in protectedWriteReason covers every dot path, so an ordinary-looking
+  // filename is the only way an instruction channel still gets through.
+  // QWEN.md (Qwen Code) and AGENT.md (Amp) are both loaded hierarchically
+  // the way CLAUDE.md is, and both read as plain notes until you know.
+  "qwen.md",
+  "agent.md",
+  "warp.md",
+  // OpenCode's project config. Not instructions — it declares MCP servers
+  // by local command, so it is `.mcp.json` without the leading dot, and
+  // the shape rule cannot see it. Both spellings: JSONC is a supported
+  // variant, and protecting one spelling of a config file is the same
+  // mistake as protecting one spelling of a memory file.
+  "opencode.json",
+  "opencode.jsonc",
+  ".cursorrules",
+  ".windsurfrules",
+  ".clinerules",
+  "gemini.md",
+  ".aider.conf.yml",
+  ".aider.conf.yaml",
   ".devcontainer.json",
 ]);
 const EXTRA_PROTECTED_PREFIXES = process.env.VAULT_PROTECTED_PREFIXES
@@ -222,6 +275,30 @@ function protectionKey(p: string): string {
 
 function protectedWriteReason(norm: string): string | null {
   const normLower = protectionKey(norm);
+  // The class rule. Everything below this point is an enumeration, and
+  // enumerating vendors has now lost the race twice: the first version
+  // named CLAUDE.md, AGENTS.md and .mcp.json and left seven other
+  // agents' instruction files writable; the version that added those
+  // seven by filename still left their *directory* formats open —
+  // .windsurf/rules/, .clinerules/, .gemini/settings.json (which
+  // declares MCP servers by command), .roo/, .kilocode/, .zed/, .idea/.
+  // Each round covered the tools someone happened to think of.
+  //
+  // The shape is what is actually invariant: developer tooling keeps its
+  // configuration in dot-directories and dotfiles, and a notes connector
+  // has no legitimate reason to write one — notes live in ordinary
+  // folders. Refusing the shape closes the tools nobody has heard of yet,
+  // which is the only version of this that survives a vault being opened
+  // in an editor the author never used.
+  //
+  // Deliberately conservative: it refuses more than it must. A vault
+  // owner can still create any of these by hand; only this connector is
+  // barred, which is the boundary that matters.
+  for (const seg of norm.split("/")) {
+    if (seg.startsWith(".")) {
+      return `'${norm}' is a dotfile or sits inside a dot-directory; those hold tool configuration and auto-loaded instructions, and this connector only manages notes`;
+    }
+  }
   if (PROTECTED_ROOT_FILES.has(normLower)) return `'${norm}' is a protected config file`;
   // Basename check, so a memory file is caught at any depth. protectionKey
   // has already folded case and trailing dots/spaces, so the segment it
