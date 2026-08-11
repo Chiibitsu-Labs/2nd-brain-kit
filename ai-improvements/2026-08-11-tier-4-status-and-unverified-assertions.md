@@ -82,6 +82,24 @@ tags: [ai-improvement, mistake, decision]
   What was accurate: the ref was stale, and the file contents in the
   working tree were the pre-merge ones.
 
+- This note took three review rounds and nine findings before it was
+  accurate, and the shape of them is the record worth keeping. Every
+  round found the same class — a claim stated past its evidence — and
+  most instances were introduced *by the previous round's fix*: the
+  three-dot explanation was written inside a correction of that same
+  misconception and got the direction backwards; the index summary kept a
+  claim the commit beside it disproved; an unqualified operational claim
+  sat two paragraphs below two that had just been narrowed. Rounds two
+  and three were spent on siblings of round one's findings rather than on
+  anything new.
+
+  The instrument error underneath: comparing file contents at two tips
+  answers whether they differ, not which side is ahead, and "differs" was
+  read as "the branch has something extra" without the other possibility
+  being considered. What settled it was commit messages naming reviewed
+  SHAs — `12c222c` and `52a782b` — which had been in the history the
+  whole time.
+
 ## Decisions
 
 - The notes pull request was merged on the strength of a general "keep
