@@ -191,13 +191,26 @@ result "discoverable, recoverable" named a property, not a procedure:
 nothing yet actually discovers it, and the check above only looks for
 `promoted:` stamps, which a plain new note never carries. So the same
 reconciliation pass every connector session runs owes a second, simpler
-check: **list `ai-improvements/*.md` and confirm every file has a
-matching `[[slug]]` line somewhere in the index (`## Open` or
-`## Archive`).** A note with no matching line at all is exactly this
-failure — file it into `## Open` now, at the top, exactly as step 1 of a
-normal filing would have, before doing anything else. This is cheap
-precisely because the index is small enough to read in full each
-session; it is not a scan that scales badly enough to skip.
+check: **list files matching `ai-improvements/YYYY-MM-DD-*.md`** — the
+exact dated-note pattern §3 of `SKILL.md` writes, not every file in the
+folder; `README.md` and anything else that isn't a dated note is never a
+lesson and is never in scope for this check — **and confirm each one's
+`[[slug]]` appears somewhere in the index** (`## Open` or `## Archive`):
+either as its own leading line, or referenced from inside another line's
+summary text. The second form is not a loophole, it's the documented
+shape of one real case: `SKILL.md` §4's duplicate-and-pending
+consolidation deliberately files a note with no line of its own, only a
+cross-link (written as `[[that note's slug]]`) inside the existing note's
+summary it was consolidated into — a note in exactly that state must
+read as accounted-for here, not as an orphan, or this check would refile
+it into `## Open` as its own line and recreate the two-lines-for-one-
+lesson state the duplicate rule exists to prevent. A note whose slug
+appears nowhere at all — not as its own line, not inside another line's
+text — is the actual failure this check exists for: file it into
+`## Open` now, at the top, exactly as step 1 of a normal filing would
+have, before doing anything else. This is cheap precisely because the
+index is small enough to read in full each session; it is not a scan
+that scales badly enough to skip.
 
 ---
 *Part of the Second Brain Kit by Chiibitsu Labs — chiibitsu.com · labs@chiibitsu.com*
