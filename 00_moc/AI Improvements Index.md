@@ -7,6 +7,7 @@ future sessions by `.claude/hooks/improve-session-start.sh`.
 
 ## Open
 
+- [[2026-09-15-vibecoding-protocol-v3-does-not-apply-here]] — declined to report fabricated Tier/flip status for a protocol whose bound tooling (gates toolkit, reviewer bots, REVIEW.md) this repo has never adopted, once the actual docs were read and checked against this repo's state (2026-09-15)
 - [[2026-09-15-improve-skill-inbox-triage-port]] — porting the vault's inbox/promotion upgrade into this kit's copy of the improve skill: split across SKILL.md and SECURITY.md by which one actually syncs to deployed vaults, and two conventions flagged rather than invented (destination files, a pending-item board) (2026-09-15)
 - [[2026-08-11-a-question-read-as-an-instruction]] — a message that both asked why and stated a preference, acted on before the question in it was answered, and the owner's reasoning for merging now proving stronger than the timing argument it overrode: a vault deployed fresh can be given the strict setting on day one rather than retrofitted (2026-08-11)
 - [[2026-08-11-merging-without-the-reviewer]] — merging unreviewed with the external reviewer out of quota and client deploys due, split not by size or subject but by whether a change is inert until a new setting is given a value, the one held back because its failure mode lands during a live onboarding session, and a rollback path that made the whole decision easier and had never been written down (2026-08-11)
