@@ -7,6 +7,7 @@ future sessions by `.claude/hooks/improve-session-start.sh`.
 
 ## Open
 
+- [[2026-09-15-chatgpt-reads-the-live-pr-packs-were-a-default-not-a-requirement]] — kept generating a fresh audit pack every review round on an unchecked assumption, until the reviewer's own verdict text said it reads the live PR directly; settled on packs only when actually asked for (2026-09-15)
 - [[2026-09-15-cross-vendor-audit-caught-two-of-my-own-claims]] — recurring across two review rounds (also [[2026-09-15-same-pattern-again-missed-cross-reference-and-a-second-false-claim]]): unverified claims and incomplete edits caught by cross-vendor review, not self-check. Open, waiting on this repo having a real canon file to promote AI-behavior lessons into. (2026-09-15)
 - [[2026-09-15-vibecoding-protocol-v3-does-not-apply-here]] — declined to report fabricated Tier/flip status for a protocol whose bound tooling (gates toolkit, reviewer bots, REVIEW.md) this repo has never adopted, once the actual docs were read and checked against this repo's state (2026-09-15)
 - [[2026-09-15-improve-skill-inbox-triage-port]] — porting the vault's inbox/promotion upgrade into this kit's copy of the improve skill: split across SKILL.md and SECURITY.md by which one actually syncs to deployed vaults, and two conventions flagged rather than invented (destination files, a pending-item board) (2026-09-15)
