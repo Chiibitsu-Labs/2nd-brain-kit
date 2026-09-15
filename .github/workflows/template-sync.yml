@@ -225,6 +225,20 @@ jobs:
             [ -e "$src" ] || continue
             pending="$(dirname "$p")/PENDING_SKILL_UPDATE.md"
             if [ -e "$p" ] && ! cmp -s "$src" "$p"; then
+              # SKILL.md carries its own ``` fences (frontmatter, git
+              # commands, index-line examples) — wrapping it in a plain
+              # triple-backtick fence lets the *first* one of those close
+              # the outer fence early, garbling everything after it for
+              # anyone reading the rendered file. A CommonMark fence closes
+              # only on a run of backticks at least as long as the one that
+              # opened it, so the fix is an outer fence longer than any run
+              # already inside the source, not a fixed guess at "long
+              # enough" — a future upstream file nesting a longer example
+              # fence would silently break a hardcoded four-backtick guess
+              # the exact same way.
+              fence_len=$(grep -oE '`{3,}' "$src" | awk '{ print length }' | sort -rn | head -1)
+              fence_len=${fence_len:-3}
+              fence=$(printf '`%.0s' $(seq 1 $((fence_len + 1))))
               {
                 echo "# Pending improve-skill update"
                 echo
@@ -242,9 +256,9 @@ jobs:
                 echo "expected and harmless — there's currently no way to silence it"
                 echo "short of taking the update."
                 echo
-                echo '```markdown'
+                echo "${fence}markdown"
                 cat "$src"
-                echo '```'
+                echo "$fence"
               } > "$pending"
             elif [ -f "$pending" ]; then
               rm -f "$pending"
