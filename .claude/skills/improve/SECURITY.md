@@ -76,6 +76,19 @@ an explicit fail-safe order with no such guarantee on the remote
 connector, where it doesn't. Never split across separate, uncoordinated
 writes outside what §5 specifies for the path you're on.
 
+**A promotion destination must itself be a note-like content file — a
+Markdown (`.md`) file outside every path this section blocks — never
+inferred merely from *not* being on the list below.** The list below is
+an enumeration of specific things to protect, the same shape as
+`vault-mcp`'s own denylist, and enumeration has a blind spot by
+construction: nothing on it stops this skill from writing a promotion
+into, say, `src/worker.ts` in a vault that also holds application code
+outside the enumerated prefixes — that path was never a note in the
+first place, and the point of this section is that note capture must
+never become code execution, not merely that it must avoid a fixed list
+of known-dangerous places. So the requirement is two-sided: not on the
+blocklist, *and* an actual `.md` note. Neither test alone is sufficient.
+
 Never write, from this skill, to `.claude/`, `.github/`, `vault-mcp/`,
 `tools/`, `.vercel/`, `.obsidian/plugins/`, or the repo's root config
 files (`package.json`, `vercel.json`, `next.config.*`, `tsconfig.json`,
@@ -155,18 +168,25 @@ stamp already has been.
 the connector, check for that recoverable state and finish it as a whole
 group, not note by note:**
 
-1. Find every note frontmatter-stamped `promoted:` that hasn't yet been
-   moved into `## Archive`. That includes the ordinary case — the note
-   owns a line still sitting under `## Open` — **and** the case where the
-   note owns no line of its own at all: a duplicate+pending note that
-   was only ever represented via a `consolidates [[...]]` marker inside
-   its line-owning sibling's summary (§4 of `SKILL.md`). If that note
-   gets stamped before its sibling in a multi-note promotion and the
-   sibling's write then fails, the stamped note has neither an Open line
-   nor an Archive line of its own to be found by — checking `## Open`
-   alone would miss it entirely. Checking every stamped note against
-   `## Archive` instead (present there, or not) catches both shapes with
-   one test.
+1. Read `## Open` and collect every note it references — each line's own
+   slug, **and** every slug named in a `consolidates [[...]]` marker
+   inside a line's summary. A note that hasn't yet reached `## Archive`
+   is necessarily referenced from `## Open` in one of those two forms —
+   that is what "not yet archived" means for a note that was ever
+   indexed at all — so this list is the complete candidate set; there is
+   no need to read every dated note ever filed (a mature vault can have
+   dozens, and `list_files` returns names only, so checking all of them
+   means opening every one just to check frontmatter). Check each
+   candidate's frontmatter for a `promoted:` stamp. This one pass over a
+   small, bounded set — not the whole notes directory — catches both
+   reachable shapes: the ordinary case (the note owns a line still under
+   `## Open`) and the case where the note owns no line of its own at all
+   (a duplicate+pending note represented only via its line-owning
+   sibling's `consolidates [[...]]` marker, per §4 of `SKILL.md`) — if
+   that note gets stamped before its sibling in a multi-note promotion
+   and the sibling's write then fails, the stamped note has no Archive
+   line yet either, but it is still reachable from `## Open` through the
+   marker that references it.
 2. For each one, read its `joint with` list (if it has one) and check
    every named sibling too — **a sibling that isn't yet stamped is part
    of the same interrupted retirement and needs its stamp written now**,
@@ -201,8 +221,13 @@ result "discoverable, recoverable" named a property, not a procedure:
 nothing yet actually discovers it, and the check above only looks for
 `promoted:` stamps, which a plain new note never carries. So the same
 reconciliation pass every connector session runs owes a second, simpler
-check: **list files matching `ai-improvements/YYYY-MM-DD-*.md`** — the
-exact dated-note pattern §3 of `SKILL.md` writes, not every file in the
+check: **list files matching `YYYY-MM-DD-*.md` in the vault's notes
+directory** — this vault's own `entries_dir` as the session already
+resolved it (default `ai-improvements/`, or whatever `.claude/improve.paths`
+overrides it to per `.claude/hooks/improve-session-start.sh` — a
+hardcoded `ai-improvements/` here would silently scan the wrong folder,
+and miss every orphan, in a vault that relocated it) — the exact
+dated-note pattern §3 of `SKILL.md` writes, not every file in the
 folder; `README.md` and anything else that isn't a dated note is never a
 lesson and is never in scope for this check — **and confirm each one is
 accounted for in the index** (`## Open` or `## Archive`) by exactly one

@@ -162,8 +162,13 @@ the final state without checking whether it should be:
 > file it as a pending item and ask, don't guess.
 >
 > **Customize me:** once this vault has a real shape — a preferences
-> note, a decisions log, a `CLAUDE.md` — describe here which kind of
-> claim goes where, so promotion stops needing to ask.
+> note, a decisions log — describe here which kind of claim goes where,
+> so promotion stops needing to ask. `CLAUDE.md` is never itself a
+> destination this skill writes to (forbidden outright, per
+> [`SECURITY.md`](SECURITY.md) §4) — it only belongs in this workflow as
+> a place the *owner* may hand-write a mapping ("promote preferences to
+> `preferences.md`") for this section to read, the same way this section
+> itself does.
 
 **Resolving** (nothing worth carrying forward): stamp the note's
 frontmatter `promoted: YYYY-MM-DD → none — <reason>`, then move its line
