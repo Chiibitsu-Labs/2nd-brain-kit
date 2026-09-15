@@ -189,8 +189,26 @@ guess on their behalf.
   line needs more than a sentence or two, it captured a whole session,
   not a lesson — tighten it, don't let the index grow prose.
 - The timestamp `(YYYY-MM-DD)` is the last token on the line, nothing
-  after it. Anything reading the index for "most recent" sorts on that
-  position; trailing text breaks the sort.
+  after it, so anything that reads the index for "most recent" can sort
+  on that position without trailing text breaking it.
+
+  **This vault's own `SessionStart` hook does not currently do that
+  reading** — it selects the 3 most recent notes by sorting filenames
+  (`YYYY-MM-DD-<slug>.md`), not by reading the index. That's the right
+  choice across *different* dates, and the wrong one for same-day notes,
+  where it sorts alphabetically by slug rather than by actual filing
+  order — proven concretely on this PR's own branch, which filed eight
+  notes on one day: the hook's filename sort picks three of them that
+  are not the three most recently written. This is a pre-existing gap
+  this PR did not introduce and does not fix — flagged here rather than
+  silently claimed solved, because a same-day-heavy session (audits,
+  review loops, exactly what produced the proof above) is exactly when
+  it matters most. A real fix reads the index's own `## Open` /
+  `## Archive` order — which is already correct by construction, since
+  filing always adds to the top — instead of the filesystem; that's a
+  change to a different file (`improve-session-start.sh`), carrying its
+  own 42-case test suite, and deserves its own dedicated pass rather
+  than a rushed edit riding this PR.
 
 ## 5. Save
 

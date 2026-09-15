@@ -184,5 +184,20 @@ marker written *before* step 1, which is a heavier mechanism than a
 documentation fix can responsibly define; naming the gap here is more
 honest than a rule that reads as complete and isn't.
 
+**A plain filing can leave the same kind of orphan, and the check above
+does not find it.** §4's connector order for an ordinary filing is note
+first, index second, stopping if the note write fails — calling the
+result "discoverable, recoverable" named a property, not a procedure:
+nothing yet actually discovers it, and the check above only looks for
+`promoted:` stamps, which a plain new note never carries. So the same
+reconciliation pass every connector session runs owes a second, simpler
+check: **list `ai-improvements/*.md` and confirm every file has a
+matching `[[slug]]` line somewhere in the index (`## Open` or
+`## Archive`).** A note with no matching line at all is exactly this
+failure — file it into `## Open` now, at the top, exactly as step 1 of a
+normal filing would have, before doing anything else. This is cheap
+precisely because the index is small enough to read in full each
+session; it is not a scan that scales badly enough to skip.
+
 ---
 *Part of the Second Brain Kit by Chiibitsu Labs — chiibitsu.com · labs@chiibitsu.com*
