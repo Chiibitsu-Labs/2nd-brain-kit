@@ -53,7 +53,7 @@ useless.
 ## 3. Write the note
 
 - **Path**: `ai-improvements/YYYY-MM-DD-<slug>.md`, where `<slug>` is a short kebab-case description of the session's topic. If a file for that date+slug already exists (second session, same topic, same day), append `-2`, `-3`, etc.
-- **Frontmatter**:
+- **Frontmatter — exactly these four fields, nothing else, at write time**:
   ```yaml
   ---
   date: YYYY-MM-DD
@@ -62,21 +62,113 @@ useless.
   tags: [ai-improvement, <one or more of: mistake, preference, friction, decision>]
   ---
   ```
+  No `version`, `status`, `owner`, `updated`, or changelog — a note is a
+  record of one session, not an evolving document. Exactly one more field
+  ever gets added, and only at retirement, never at write time: see
+  `promoted:` in §4.
 - **Body**: one `##` heading per category that actually has content (skip empty ones) — `## AI mistakes`, `## Preferences`, `## Workflow friction`, `## Decisions`, `## Other`. Concrete bullets, not vague summaries.
 
-## 4. Update the index
+## 4. Update the index — an inbox with terminal states, not a log
 
-`00_moc/AI Improvements Index.md` — a flat reverse-chronological list of
-links. If it doesn't exist, create it first: title, one-line description,
-then the list. Add one line at the top of the list:
+`00_moc/AI Improvements Index.md` is not an append-only list. It has two
+sections, `## Open` and `## Archive`. Every note starts in `## Open` and
+either stays there — actively waiting on something — or gets *retired*
+into `## Archive` once its lesson has a permanent home or turns out not to
+need one. Nothing accumulates forever unread; that's the whole point of
+this section.
+
+If the file doesn't exist yet, create it with a title, one-line
+description, and empty `## Open` / `## Archive` headings.
+
+**Step 1 — file the new note.** Add one line at the top of `## Open`:
 ```
 - [[YYYY-MM-DD-<slug>]] — <one-line summary> (YYYY-MM-DD)
 ```
 
+**Step 2 — triage, same pass, before committing.** Don't leave step 1 as
+the final state without checking whether it should be:
+
+- **Same lesson as an existing `## Open` line** (same defect class, same
+  preference, same rule — a second occurrence, not a new topic)? Don't
+  leave two lines describing the same thing. Promote it now (below).
+- **Nothing worth carrying forward** (a one-off bug, a fact that's since
+  expired)? Resolve it now (below) rather than leaving it to sit.
+- **Worth promoting, but can't happen from this session** (the
+  destination isn't reachable here, or it needs a ruling only the owner
+  can make)? Leave it in `## Open`, but say what it's waiting on (below)
+  — never leave a line that silently gives no indication anything is
+  pending.
+- Otherwise, leave it in `## Open` as filed in step 1. Most notes stay
+  here until a second occurrence or a review prompts triage — that's
+  normal, not a bug.
+
+**Promoting** means, in one pass:
+1. Write the actual lesson into its real home — wherever this vault (or
+   its owner) keeps that kind of durable claim.
+2. Stamp the source note's frontmatter: `promoted: YYYY-MM-DD → <destination>`.
+3. Move its line from `## Open` to the top of `## Archive`:
+   ```
+   - [[YYYY-MM-DD-<slug>]] — promoted → <link to destination> · <one-line summary> (YYYY-MM-DD)
+   ```
+
+> **Where does a promotion go?** This kit ships no fixed set of
+> destination files (no `preferences.md`, `decisions.md`, or canon file) —
+> unlike a hand-grown vault that accumulates its own structure over time,
+> a freshly deployed kit starts with only `00_moc/`, `daily/`, `notes/`,
+> `ai-improvements/`. **Don't invent a destination file's shape on your
+> own.** If the owner has told you (here, in `CLAUDE.md`, or in this
+> section once they've customized it — see the callout below) where a
+> given kind of claim belongs, write it there. If they haven't, this is
+> exactly the "worth promoting, can't happen from this session" case:
+> file it as a pending item and ask, don't guess.
+>
+> **Customize me:** once this vault has a real shape — a preferences
+> note, a decisions log, a `CLAUDE.md` — describe here which kind of
+> claim goes where, so promotion stops needing to ask.
+
+**Resolving** (nothing worth carrying forward): stamp the note's
+frontmatter `promoted: YYYY-MM-DD → none — <reason>`, then move its line
+to `## Archive`:
+```
+- [[YYYY-MM-DD-<slug>]] — resolved · <reason> (YYYY-MM-DD)
+```
+
+**Pending** (worth promoting, can't happen now): file it so it isn't
+silently stuck. This repo has no existing task-board convention, so use
+a GitHub issue on this repo unless the owner has since set up something
+else — link it from the index line, and don't stamp the note's
+frontmatter (it hasn't been promoted yet, only queued). The line stays in
+`## Open`, rewritten to say what it's waiting on:
+```
+- [[YYYY-MM-DD-<slug>]] — Open, waiting on <link>. (YYYY-MM-DD)
+```
+
+**Format rules for every index line, in both sections:**
+- One line, human-readable, is the whole entry. No history, no evidence
+  dump, no side commentary — all of that belongs in the note body. If a
+  line needs more than a sentence or two, it captured a whole session,
+  not a lesson — tighten it, don't let the index grow prose.
+- The timestamp `(YYYY-MM-DD)` is the last token on the line, nothing
+  after it. Anything reading the index for "most recent" sorts on that
+  position; trailing text breaks the sort.
+
 ## 5. Save
 
-- Working via the remote vault connector: use its write tool for both files.
-- Working on a local clone (Claude Code): `git add` the two files by exact path (never `-A` or `.`), then commit with `git commit --only -m "Improve: <one-line summary>" -- <path1> <path2>`, and push the current branch. The exact form matters and the reasoning behind every part of it — why `-m` precedes `--`, why `--only` is not optional — is in [`SECURITY.md`](SECURITY.md) §5, which is the authority on it.
+- Working via the remote vault connector: use its write tool for every
+  file this pass touched.
+- Working on a local clone (Claude Code): `git add` **every file this
+  pass touched, by exact path** — never `-A` or `.`. A plain filing is
+  two files (the note, the index); a promotion or a resolution can be
+  more (the note, the index, a destination file, and any other note whose
+  frontmatter also got stamped as part of the same retirement) — stage
+  and commit all of them together, in one commit, or not at all. Commit
+  with `git commit --only -m "Improve: <one-line summary>" -- <path1> <path2> ...`,
+  and push the current branch. A promotion that commits the archive line
+  without the frontmatter stamp (or the reverse) is a half-committed
+  promotion — exactly the kind of drift this system exists to prevent.
+  The exact form matters and the reasoning behind every part of it — why
+  `-m` precedes `--`, why `--only` is not optional — is in
+  [`SECURITY.md`](SECURITY.md) §5, which is the authority on it.
 
 ## 6. Tell the owner
 
