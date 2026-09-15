@@ -155,8 +155,18 @@ stamp already has been.
 the connector, check for that recoverable state and finish it as a whole
 group, not note by note:**
 
-1. Find every note frontmatter-stamped `promoted:` whose index line is
-   still under `## Open`.
+1. Find every note frontmatter-stamped `promoted:` that hasn't yet been
+   moved into `## Archive`. That includes the ordinary case — the note
+   owns a line still sitting under `## Open` — **and** the case where the
+   note owns no line of its own at all: a duplicate+pending note that
+   was only ever represented via a `consolidates [[...]]` marker inside
+   its line-owning sibling's summary (§4 of `SKILL.md`). If that note
+   gets stamped before its sibling in a multi-note promotion and the
+   sibling's write then fails, the stamped note has neither an Open line
+   nor an Archive line of its own to be found by — checking `## Open`
+   alone would miss it entirely. Checking every stamped note against
+   `## Archive` instead (present there, or not) catches both shapes with
+   one test.
 2. For each one, read its `joint with` list (if it has one) and check
    every named sibling too — **a sibling that isn't yet stamped is part
    of the same interrupted retirement and needs its stamp written now**,
