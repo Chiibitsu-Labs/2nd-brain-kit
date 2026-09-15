@@ -5,6 +5,9 @@ repeating, standing preferences, workflow friction, and decisions and
 their reasoning. Written by the `improve` skill and auto-loaded back into
 future sessions by `.claude/hooks/improve-session-start.sh`.
 
+## Open
+
+- [[2026-09-15-improve-skill-inbox-triage-port]] — porting the vault's inbox/promotion upgrade into this kit's copy of the improve skill: split across SKILL.md and SECURITY.md by which one actually syncs to deployed vaults, and two conventions flagged rather than invented (destination files, a pending-item board) (2026-09-15)
 - [[2026-08-11-a-question-read-as-an-instruction]] — a message that both asked why and stated a preference, acted on before the question in it was answered, and the owner's reasoning for merging now proving stronger than the timing argument it overrode: a vault deployed fresh can be given the strict setting on day one rather than retrofitted (2026-08-11)
 - [[2026-08-11-merging-without-the-reviewer]] — merging unreviewed with the external reviewer out of quota and client deploys due, split not by size or subject but by whether a change is inert until a new setting is given a value, the one held back because its failure mode lands during a live onboarding session, and a rollback path that made the whole decision easier and had never been written down (2026-08-11)
 - [[2026-08-11-advice-on-unread-code]] — a stopgap recommended for the owner's live vault that would have removed its protections, on a premise about deployed code that was readable through the connector already in use and was not read; the same seeing-only-what-was-in-view pattern for the second time in a day; and a review gate that turned out to be a property of a quota (2026-08-11)
@@ -18,3 +21,9 @@ future sessions by `.claude/hooks/improve-session-start.sh`.
 - [[2026-08-10-vibeos-audit-protocol-run]] — a test that could not fail and had already been cited as evidence three times, a review gate counted from resolved threads rather than clean passes, and why the audit pack is a committed file rather than a PR thread (2026-08-10)
 - [[2026-08-10-ci-lint-globbing-and-review-thread-cleanup]] — a syntax gate that parsed only its first file, a lint step that went red where no scripts existed yet, and a durable note asserting the inverse of the delivery order CI was built to survive (2026-08-10)
 - [[2026-08-10-vault-path-guards-and-improve-rules-pointer]] — four ways work looked finished and wasn't: rules nothing referenced, then rules a sync couldn't deliver, a loader reading its own README as a note, and a fence bypassable by filename; plus guards matching spelling rather than how paths resolve (2026-08-10)
+
+The ten entries above predate the Open/Archive split (2026-09-15) and
+have not been triaged into it — filed under Open, unclassified, rather
+than guessed at. Promoting or resolving any of them is its own pass.
+
+## Archive
