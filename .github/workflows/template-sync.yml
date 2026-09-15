@@ -220,48 +220,77 @@ jobs:
           # Unlike workflows, .claude/ is not blocked from an Actions push,
           # so this *could* force-overwrite — it deliberately doesn't, for
           # the same customization reason CREATE_ONLY_PATHS exists at all.
+          #
+          # Comparing local directly against upstream, as an earlier version
+          # of this loop did, breaks the moment an owner actually takes an
+          # update: merging upstream's new content into a customized copy
+          # by hand (the only way this file is ever updated) never produces
+          # a byte-identical match to raw upstream again, so every later
+          # sync would see "still differs" and recreate the pending file
+          # forever, indistinguishable from having never merged it at all.
+          # The fix is to track *which upstream version was last shown*,
+          # not whether local currently equals upstream: a marker file
+          # alongside the pending one, holding a hash of the upstream
+          # content as of the last time it was surfaced. Regenerate only
+          # when upstream's hash has moved past what the marker records.
           for p in "${CREATE_ONLY_PATHS[@]}"; do
             src=".template-upstream/$p"
             [ -e "$src" ] || continue
             pending="$(dirname "$p")/PENDING_SKILL_UPDATE.md"
-            if [ -e "$p" ] && ! cmp -s "$src" "$p"; then
-              # SKILL.md carries its own ``` fences (frontmatter, git
-              # commands, index-line examples) — wrapping it in a plain
-              # triple-backtick fence lets the *first* one of those close
-              # the outer fence early, garbling everything after it for
-              # anyone reading the rendered file. A CommonMark fence closes
-              # only on a run of backticks at least as long as the one that
-              # opened it, so the fix is an outer fence longer than any run
-              # already inside the source, not a fixed guess at "long
-              # enough" — a future upstream file nesting a longer example
-              # fence would silently break a hardcoded four-backtick guess
-              # the exact same way.
-              fence_len=$(grep -oE '`{3,}' "$src" | awk '{ print length }' | sort -rn | head -1)
-              fence_len=${fence_len:-3}
-              fence=$(printf '`%.0s' $(seq 1 $((fence_len + 1))))
-              {
-                echo "# Pending improve-skill update"
-                echo
-                echo "The canonical template's \`$p\` has changed since this vault's copy"
-                echo "was created — a workflow upgrade, not a security fix (those reach"
-                echo "this vault automatically via \`SECURITY.md\`). \`$p\` is yours to"
-                echo "customize, so this sync never overwrites it; the upstream version is"
-                echo "reproduced below for you to read, diff against your own copy, and"
-                echo "merge by hand — carrying over whatever you've customized. This file"
-                echo "disappears on its own once your copy matches upstream — take the"
-                echo "update (even partially) to make that happen. Deleting this file"
-                echo "without changing \`$p\` does NOT dismiss it: your copy still differs"
-                echo "from upstream, so the next sync run recreates this same file. If"
-                echo "you're deliberately not taking the update, that recreation is"
-                echo "expected and harmless — there's currently no way to silence it"
-                echo "short of taking the update."
-                echo
-                echo "${fence}markdown"
-                cat "$src"
-                echo "$fence"
-              } > "$pending"
-            elif [ -f "$pending" ]; then
+            marker="$(dirname "$p")/PENDING_SKILL_UPDATE.last-upstream-sha256"
+            upstream_hash=$(sha256sum "$src" | cut -d' ' -f1)
+            if [ -e "$p" ] && cmp -s "$src" "$p"; then
+              # In sync (fresh copy, or an owner's customization happens to
+              # match verbatim) — nothing pending, and the marker reflects
+              # the version this vault is caught up to either way.
               rm -f "$pending"
+              echo "$upstream_hash" > "$marker"
+            elif [ -e "$p" ]; then
+              marker_hash=""
+              [ -f "$marker" ] && marker_hash=$(cat "$marker")
+              if [ "$marker_hash" = "$upstream_hash" ]; then
+                # This exact upstream version was already surfaced. Local
+                # still differs — customization, a merge-in-progress, or a
+                # deliberate decline — but nothing *new* has shipped, so
+                # leave whatever state the owner left the pending file in
+                # (present or deleted) rather than recreating it.
+                :
+              else
+                # A version the owner has not been shown yet.
+                # SKILL.md carries its own ``` fences (frontmatter, git
+                # commands, index-line examples) — wrapping it in a plain
+                # triple-backtick fence lets the *first* one of those close
+                # the outer fence early, garbling everything after it for
+                # anyone reading the rendered file. A CommonMark fence
+                # closes only on a run of backticks at least as long as the
+                # one that opened it, so the fix is an outer fence longer
+                # than any run already inside the source, not a fixed guess
+                # at "long enough" — a future upstream file nesting a
+                # longer example fence would silently break a hardcoded
+                # four-backtick guess the exact same way.
+                fence_len=$(grep -oE '`{3,}' "$src" | awk '{ print length }' | sort -rn | head -1)
+                fence_len=${fence_len:-3}
+                fence=$(printf '`%.0s' $(seq 1 $((fence_len + 1))))
+                {
+                  echo "# Pending improve-skill update"
+                  echo
+                  echo "The canonical template's \`$p\` has changed since this vault's copy"
+                  echo "was created — a workflow upgrade, not a security fix (those reach"
+                  echo "this vault automatically via \`SECURITY.md\`). \`$p\` is yours to"
+                  echo "customize, so this sync never overwrites it; the upstream version is"
+                  echo "reproduced below for you to read, diff against your own copy, and"
+                  echo "merge by hand — carrying over whatever you've customized. Merging it"
+                  echo "in (even partially), or deliberately deciding not to, both clear this"
+                  echo "notice — either way, the next sync recreates it only if upstream ships"
+                  echo "something newer than this version, never merely because your copy"
+                  echo "still (and expectedly) differs from a raw upstream file you customized."
+                  echo
+                  echo "${fence}markdown"
+                  cat "$src"
+                  echo "$fence"
+                } > "$pending"
+                echo "$upstream_hash" > "$marker"
+              fi
             fi
           done
 
