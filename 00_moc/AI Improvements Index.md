@@ -7,6 +7,7 @@ future sessions by `.claude/hooks/improve-session-start.sh`.
 
 ## Open
 
+- [[2026-09-15-check-in-polling-was-burning-tokens-needlessly]] — defaulted to a recurring `send_later` check-in every time nothing was actionable while babysitting a PR already subscribed to real GitHub webhook events; owner corrected it directly, standing rule saved to the user-level `~/.claude/CLAUDE.md` (not a vault note, per this skill's own directive-vs-record rule) — poll only when there's genuinely no event to hook into, and even then once, not on a repeating cadence (2026-09-15)
 - [[2026-09-15-disputed-an-unverifiable-claim-and-proved-a-bug-instead-of-trusting-either-side]] — treated an unverifiable "authoritative source repo" citation as unverifiable rather than authoritative, and proved a separate claim against real commit data before agreeing it was a bug — neither trusted nor dismissed a review finding on the reviewer's word alone (2026-09-15)
 - [[2026-09-15-fixed-the-reported-direction-missed-the-mirror-image]] — fixed a decline-recreation bug honestly, missed that the same root cause broke the accept direction identically until a second independent review round found it; built the persisted-marker fix once two findings hit the same root cause rather than one (2026-09-15)
 - [[2026-09-15-chatgpt-reads-the-live-pr-packs-were-a-default-not-a-requirement]] — kept generating a fresh audit pack every review round on an unchecked assumption, until the reviewer's own verdict text said it reads the live PR directly; settled on packs only when actually asked for (2026-09-15)
