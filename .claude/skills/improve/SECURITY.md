@@ -69,8 +69,12 @@ one as not worth keeping) can touch more than those two: the note itself
 index (its line moved from Open to Archive), a destination file the
 lesson was promoted into, and any other note whose frontmatter is stamped
 as part of the same retirement. All of that is still in-scope for this
-skill to write — but every file touched by one retirement must be part of
-that same commit (§5); never split across separate, uncoordinated writes.
+skill to write — but every file touched by one retirement is **one
+action**, and §5 is the authority on what "together" means for it: one
+real git commit on a local clone, where that guarantee actually exists;
+an explicit fail-safe order with no such guarantee on the remote
+connector, where it doesn't. Never split across separate, uncoordinated
+writes outside what §5 specifies for the path you're on.
 
 Never write, from this skill, to `.claude/`, `.github/`, `vault-mcp/`,
 `tools/`, `.vercel/`, `.obsidian/plugins/`, or the repo's root config
@@ -128,27 +132,57 @@ of pretending one commit can cover it:
    landing wherever it belongs.
 2. Write every note's frontmatter stamp next — the newly-filed note's,
    and (for a duplicate promotion) every other Open note being subsumed
-   into the same promotion.
+   into the same promotion. **When more than one note is stamped in this
+   step, every one of those stamps names every other note in the same
+   group**: `promoted: YYYY-MM-DD → <destination> · joint with [[other-note-1]], [[other-note-2]]`.
+   A successfully-stamped note is what makes the rest of its group
+   findable if a sibling's write fails — without the sibling list, a
+   half-stamped group is indistinguishable from several unrelated
+   promotions, one of which happens to have succeeded.
 3. Write the index **last**, only once steps 1–2 all succeeded.
 
 If any write fails, **stop immediately** — do not attempt the index, and
 do not tell the owner the retirement finished. Say plainly which writes
 landed and which didn't, so it can be finished or reconciled by hand.
-This ordering makes the one state that can survive a partial failure a
-recoverable one: a note frontmatter-stamped `promoted:` or with a
-`promoted: … → none` resolution, whose index line still shows it under
-`## Open`. The reverse — an Archive line for a note whose frontmatter was
-never stamped — cannot happen under this order, because the index is
-never written until the stamp already has been.
+This ordering makes most reachable partial-failure states recoverable: a
+note frontmatter-stamped `promoted:` (with its `joint with` list, if any)
+whose index line still shows it under `## Open`. The reverse — an
+Archive line for a note whose frontmatter was never stamped — cannot
+happen under this order, because the index is never written until every
+stamp already has been.
 
 **Every session, before starting new work in a vault reached only through
-the connector, check for that recoverable state**: if a note's
-frontmatter carries `promoted:` but its index line is still under
-`## Open`, a prior retirement was interrupted after step 2 and before
-step 3. Finish it — write the correct `## Archive` line matching what the
-frontmatter already says — before doing anything else. This is not
-optional cleanup; an unreconciled note here means the index is actively
-lying about that note's state.
+the connector, check for that recoverable state and finish it as a whole
+group, not note by note:**
+
+1. Find every note frontmatter-stamped `promoted:` whose index line is
+   still under `## Open`.
+2. For each one, read its `joint with` list (if it has one) and check
+   every named sibling too — **a sibling that isn't yet stamped is part
+   of the same interrupted retirement and needs its stamp written now**,
+   using the same destination and date the stamped note(s) already
+   recorded, before any of the group's index lines are touched.
+3. Only once every note in the group is stamped does the index get its
+   `## Archive` lines written — one per note in the group, in the same
+   pass.
+
+This is not optional cleanup; an unreconciled note here means the index
+is actively lying about that note's state, and finishing only the
+already-stamped note of a multi-note group silently reintroduces the
+"two lines for one lesson" state promotion exists to close.
+
+**Named limit, not solved by the above**: a failure between the
+destination write (step 1) and the *first* successful stamp (step 2) has
+no durable marker pointing back to it — no note carries `promoted:` yet,
+so nothing looks like an interrupted retirement to the check above. The
+practical consequence is bounded: on the next attempt at the same
+promotion, the destination file may receive the same content a second
+time, which is a content-quality nuisance to clean up by hand, not a
+false or lying record — no note's frontmatter or the index ever claims a
+promotion that didn't happen. Closing this fully would need a durable
+marker written *before* step 1, which is a heavier mechanism than a
+documentation fix can responsibly define; naming the gap here is more
+honest than a rule that reads as complete and isn't.
 
 ---
 *Part of the Second Brain Kit by Chiibitsu Labs — chiibitsu.com · labs@chiibitsu.com*

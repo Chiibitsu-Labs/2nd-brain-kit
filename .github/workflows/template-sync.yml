@@ -234,8 +234,13 @@ jobs:
                 echo "customize, so this sync never overwrites it; the upstream version is"
                 echo "reproduced below for you to read, diff against your own copy, and"
                 echo "merge by hand — carrying over whatever you've customized. This file"
-                echo "disappears on its own once your copy matches upstream (or once you"
-                echo "delete it, if you're deliberately not taking the update)."
+                echo "disappears on its own once your copy matches upstream — take the"
+                echo "update (even partially) to make that happen. Deleting this file"
+                echo "without changing \`$p\` does NOT dismiss it: your copy still differs"
+                echo "from upstream, so the next sync run recreates this same file. If"
+                echo "you're deliberately not taking the update, that recreation is"
+                echo "expected and harmless — there's currently no way to silence it"
+                echo "short of taking the update."
                 echo
                 echo '```markdown'
                 cat "$src"

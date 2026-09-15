@@ -111,7 +111,12 @@ the final state without checking whether it should be:
    above, the existing note(s) it duplicates too. A promotion triggered by
    a duplicate is not "write the new note, then separately handle the
    old one" — it is one promotion with two or more source notes, and
-   every one of them gets stamped.
+   every one of them gets stamped. **When more than one note is
+   subsumed, every stamp also names its siblings**:
+   `promoted: YYYY-MM-DD → <destination> · joint with [[other-note-1]], [[other-note-2]]`
+   — this is what lets a later session recognize and finish the whole
+   group if a connector-path write fails partway through (see
+   [`SECURITY.md`](SECURITY.md) §5).
 3. Move **every** note stamped in step 2 from `## Open` to `## Archive`,
    one line each:
    ```
@@ -146,23 +151,22 @@ to `## Archive`:
 ```
 
 **Pending** (worth promoting, can't happen now): file it so it isn't
-silently stuck. This repo has no existing task-board convention, so:
-
-- **A session with GitHub tooling** (Claude Code with `git`/`gh`, or
-  equivalent repo access) — open a GitHub issue on this repo, unless the
-  owner has since set up something else, and link it from the index line.
-- **A session reached only through the remote vault connector** has no
-  issue-creation tool — `read_file` / `write_file` / `list_files` is the
-  whole surface (§1). Don't block on a link you have no way to create:
-  state what it's waiting on directly in the index line instead, in
-  plain words, with no link.
-
-Either way, don't stamp the note's frontmatter (it hasn't been promoted
-yet, only queued). The line stays in `## Open`, rewritten to say what
-it's waiting on:
+silently stuck — without inventing a task-board convention this repo
+doesn't have. This repo has none today: no issue-tracker link, no
+`ops/`-style board, nothing to point at. **Don't invent one** (same rule
+as the destination-file callout above, and for the same reason — a
+convention invented under this skill's own authority is exactly what
+this vault's owner would have to un-invent later if they want something
+else). Don't stamp the note's frontmatter (it hasn't been promoted yet,
+only queued). The line stays in `## Open`, rewritten to say what it's
+waiting on in plain words, with no link:
 ```
-- [[YYYY-MM-DD-<slug>]] — Open, waiting on <link or plain-words reason>. (YYYY-MM-DD)
+- [[YYYY-MM-DD-<slug>]] — Open, waiting on <plain-words reason>. (YYYY-MM-DD)
 ```
+If the owner has since told you about a real tracker this vault uses
+(here, in `CLAUDE.md`, or in a customized version of this section), link
+to it there instead — that's the owner's convention to use, not one to
+guess on their behalf.
 
 **Format rules for every index line, in both sections:**
 - One line, human-readable, is the whole entry. No history, no evidence
