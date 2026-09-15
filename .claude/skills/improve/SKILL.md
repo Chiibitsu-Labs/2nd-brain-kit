@@ -94,14 +94,25 @@ the final state without checking whether it should be:
 
 - **Same lesson as an existing `## Open` line** (same defect class, same
   preference, same rule — a second occurrence, not a new topic)? Don't
-  leave two lines describing the same thing. Promote it now (below).
+  leave two lines describing the same thing. Promote it now (below) —
+  **unless promotion can't happen from this session** (no destination,
+  no ruling available), in which case it's both a duplicate *and*
+  pending at once. That combination is not "leave two Open lines" and
+  not "promote anyway": **consolidate onto the existing note's index
+  line rather than filing a new one.** Update its one-line summary to
+  note the additional occurrence (a link to the new note's body is where
+  the specifics live), and mark it pending exactly as the standalone
+  case below describes — `Open, waiting on <reason>.` Still file the new
+  note itself (step 1 already did); it just never gets its own index
+  line, and neither note's frontmatter gets stamped, since nothing has
+  been promoted yet.
 - **Nothing worth carrying forward** (a one-off bug, a fact that's since
   expired)? Resolve it now (below) rather than leaving it to sit.
-- **Worth promoting, but can't happen from this session** (the
-  destination isn't reachable here, or it needs a ruling only the owner
-  can make)? Leave it in `## Open`, but say what it's waiting on (below)
-  — never leave a line that silently gives no indication anything is
-  pending.
+- **Worth promoting, but can't happen from this session, and it's not a
+  duplicate** (the destination isn't reachable here, or it needs a
+  ruling only the owner can make)? Leave it in `## Open`, but say what
+  it's waiting on (below) — never leave a line that silently gives no
+  indication anything is pending.
 - Otherwise, leave it in `## Open` as filed in step 1. Most notes stay
   here until a second occurrence or a review prompts triage — that's
   normal, not a bug.
@@ -183,15 +194,23 @@ guess on their behalf.
 
 ## 5. Save
 
-- **Working via the remote vault connector**: a plain filing (the note,
-  the index) can go in any order. A promotion or resolution cannot — the
-  connector commits one file per `write_file` call, with no way to group
-  several into one commit, so **write in the order [`SECURITY.md`](SECURITY.md)
-  §5 specifies** (destination file(s), then every stamped note's
-  frontmatter, then the index last) and stop immediately if any write
-  fails rather than continuing on to the index. That file is the
-  authority on why this order, and on the reconciliation check every
-  connector session owes at the start of its next piece of work.
+- **Working via the remote vault connector**: every write goes
+  substance-first, index-last, on a plain filing exactly as on a
+  promotion or resolution — the connector commits one file per
+  `write_file` call, with no way to group several into one commit, so an
+  index line written before the thing it points to exists is a dangling
+  reference the moment the next write fails. **Write the note first,
+  the index second**; if the note write fails, stop — an unindexed note
+  sitting in `ai-improvements/` is still a discoverable, recoverable
+  file, while an index line pointing at a note that was never written is
+  a broken link nothing points back to fixing. A promotion or resolution
+  follows the same substance-first principle at greater length: **write
+  in the order [`SECURITY.md`](SECURITY.md) §5 specifies** (destination
+  file(s), then every stamped note's frontmatter, then the index last)
+  and stop immediately if any write fails rather than continuing on to
+  the index. That file is the authority on why this order, and on the
+  reconciliation check every connector session owes at the start of its
+  next piece of work.
 - **Working on a local clone (Claude Code)**: `git add` **every file this
   pass touched, by exact path** — never `-A` or `.`. A plain filing is
   two files (the note, the index); a promotion or a resolution can be
