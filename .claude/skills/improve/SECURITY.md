@@ -194,23 +194,30 @@ reconciliation pass every connector session runs owes a second, simpler
 check: **list files matching `ai-improvements/YYYY-MM-DD-*.md`** — the
 exact dated-note pattern §3 of `SKILL.md` writes, not every file in the
 folder; `README.md` and anything else that isn't a dated note is never a
-lesson and is never in scope for this check — **and confirm each one's
-`[[slug]]` appears somewhere in the index** (`## Open` or `## Archive`):
-either as its own leading line, or referenced from inside another line's
-summary text. The second form is not a loophole, it's the documented
-shape of one real case: `SKILL.md` §4's duplicate-and-pending
-consolidation deliberately files a note with no line of its own, only a
-cross-link (written as `[[that note's slug]]`) inside the existing note's
-summary it was consolidated into — a note in exactly that state must
-read as accounted-for here, not as an orphan, or this check would refile
-it into `## Open` as its own line and recreate the two-lines-for-one-
-lesson state the duplicate rule exists to prevent. A note whose slug
-appears nowhere at all — not as its own line, not inside another line's
-text — is the actual failure this check exists for: file it into
-`## Open` now, at the top, exactly as step 1 of a normal filing would
-have, before doing anything else. This is cheap precisely because the
-index is small enough to read in full each session; it is not a scan
-that scales badly enough to skip.
+lesson and is never in scope for this check — **and confirm each one is
+accounted for in the index** (`## Open` or `## Archive`) by exactly one
+of two tests: its slug is its own leading line, or the literal substring
+`consolidates [[<that slug>]]` appears inside another line's summary.
+Nothing else counts, and that's deliberate: an index summary is free to
+mention another note's `[[slug]]` for ordinary context (related history,
+a comparison, evidence cited for a different claim) without that mention
+meaning the referenced note's lifecycle lives there. Only the exact,
+literal `consolidates [[...]]` substring — which `SKILL.md` §4's
+duplicate-and-pending consolidation step writes deliberately, and only
+for that one case — marks a note as intentionally unindexed rather than
+orphaned. Treating *any* incidental `[[slug]]` occurrence as
+accounted-for (an earlier version of this rule did) would let a real
+orphan — a note whose index write genuinely failed — hide forever behind
+some unrelated line that happens to name it for other reasons; the
+literal-substring test closes that gap without opening the
+duplicate-and-pending case back up as false-orphan bait, the way a plain
+missing-line test would (recreating the two-lines-for-one-lesson state
+the duplicate rule exists to prevent). A note matching neither test is
+the actual failure this check exists for: file it into `## Open` now, at
+the top, exactly as step 1 of a normal filing would have, before doing
+anything else. This is cheap precisely because the index is small enough
+to read in full each session; it is not a scan that scales badly enough
+to skip.
 
 ---
 *Part of the Second Brain Kit by Chiibitsu Labs — chiibitsu.com · labs@chiibitsu.com*

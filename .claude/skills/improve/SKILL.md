@@ -100,15 +100,19 @@ the final state without checking whether it should be:
   pending at once. That combination is not "leave two Open lines" and
   not "promote anyway": **consolidate onto the existing note's index
   line rather than filing a new one.** Update its one-line summary to
-  note the additional occurrence, **including the new note's `[[slug]]`
-  as an actual wikilink in that summary** — not just prose pointing at
-  it — since that link is what lets the reconciliation check in
-  [`SECURITY.md`](SECURITY.md) §5 recognize the new note as accounted
-  for rather than orphaned, and mark it pending exactly as the
-  standalone case below describes — `Open, waiting on <reason>.` Still
-  file the new note itself (step 1 already did); it just never gets its
-  own index line, and neither note's frontmatter gets stamped, since
-  nothing has been promoted yet.
+  note the additional occurrence, **using the exact literal substring
+  `consolidates [[<new note's slug>]]` somewhere in that line** — not
+  free-form prose, and not just any wikilink, because that exact
+  substring, and only that substring, is what the reconciliation check
+  in [`SECURITY.md`](SECURITY.md) §5 searches for to recognize the new
+  note as deliberately-unindexed rather than orphaned. An ordinary
+  wikilink anywhere else in an index summary keeps meaning what it has
+  always meant — a cross-reference for context — and must not be
+  confused with this one specific, literal marker. Mark it pending
+  exactly as the standalone case below describes — `Open, waiting on
+  <reason>.` Still file the new note itself (step 1 already did); it
+  just never gets its own index line, and neither note's frontmatter
+  gets stamped, since nothing has been promoted yet.
 - **Nothing worth carrying forward** (a one-off bug, a fact that's since
   expired)? Resolve it now (below) rather than leaving it to sit.
 - **Worth promoting, but can't happen from this session, and it's not a
