@@ -89,11 +89,11 @@ The vault connector enforces this server-side and refuses such writes.
 Claude Code editing a local clone has no such guard — which is exactly
 why the rule is written down here.
 
-## 5. Commit only the files one action touched
+## 5. One action, its files together — the mechanism differs by path
 
-On a local clone, stage and commit by exact path — every file the current
-action (a filing, a promotion, or a resolution) touched, no more and no
-less:
+**On a local clone**, stage and commit by exact path — every file the
+current action (a filing, a promotion, or a resolution) touched, no more
+and no less:
 
 ```
 git add <path1> <path2> ...
@@ -109,11 +109,46 @@ owner never reviewed. Push the current branch; never force-push.
 
 A promotion or resolution is one action with several files (the note, the
 index, and — for a promotion — the destination and any other note
-retired alongside it): commit all of them together, in the same commit,
-or not at all. A commit that moves the index line to Archive without the
-frontmatter stamp landing in the same commit (or the reverse) leaves the
-note and the index disagreeing about whether it was ever retired — the
-exact class of bug this file exists to keep out of a vault's record.
+retired alongside it): commit all of them together, in **one real git
+commit**, or not at all. Git actually gives this an atomic guarantee: a
+`git commit` either creates the commit object with everything staged, or
+it doesn't exist at all.
+
+**Working via the remote vault connector, there is no such guarantee, and
+claiming one would be false.** Its `write_file` tool calls the GitHub
+Contents API once per file — each call is its own commit, and a
+retirement touching three files is three separate commits with no
+transaction wrapping them. A failure after the first write and before the
+third leaves the vault in a real partial state; no amount of instruction
+text makes that atomic. So the connector path substitutes **an order that
+fails safe, plus a check that finds and repairs a partial state** instead
+of pretending one commit can cover it:
+
+1. Write the destination file(s) first — the promotion's actual content
+   landing wherever it belongs.
+2. Write every note's frontmatter stamp next — the newly-filed note's,
+   and (for a duplicate promotion) every other Open note being subsumed
+   into the same promotion.
+3. Write the index **last**, only once steps 1–2 all succeeded.
+
+If any write fails, **stop immediately** — do not attempt the index, and
+do not tell the owner the retirement finished. Say plainly which writes
+landed and which didn't, so it can be finished or reconciled by hand.
+This ordering makes the one state that can survive a partial failure a
+recoverable one: a note frontmatter-stamped `promoted:` or with a
+`promoted: … → none` resolution, whose index line still shows it under
+`## Open`. The reverse — an Archive line for a note whose frontmatter was
+never stamped — cannot happen under this order, because the index is
+never written until the stamp already has been.
+
+**Every session, before starting new work in a vault reached only through
+the connector, check for that recoverable state**: if a note's
+frontmatter carries `promoted:` but its index line is still under
+`## Open`, a prior retirement was interrupted after step 2 and before
+step 3. Finish it — write the correct `## Archive` line matching what the
+frontmatter already says — before doing anything else. This is not
+optional cleanup; an unreconciled note here means the index is actively
+lying about that note's state.
 
 ---
 *Part of the Second Brain Kit by Chiibitsu Labs — chiibitsu.com · labs@chiibitsu.com*

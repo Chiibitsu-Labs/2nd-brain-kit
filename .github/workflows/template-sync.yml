@@ -17,6 +17,15 @@ name: Vault template sync — pull kit updates
 # alongside it, which IS force-synced, and SKILL.md points at it as the
 # authority. Editing SECURITY.md locally won't stick; customize SKILL.md.
 #
+# A *workflow* upgrade to SKILL.md (new behavior, as opposed to a security
+# fix) still deserves to reach an already-deployed vault somehow — silence
+# forever isn't the goal, only never-overwrite is. So when upstream's
+# SKILL.md differs from this vault's own copy, this workflow writes
+# .claude/skills/improve/PENDING_SKILL_UPDATE.md with the new content, for
+# the owner to read and merge by hand into their customized copy. Same
+# shape as PENDING_WORKFLOW_UPDATE.md below, same reason: never silently
+# apply something the owner may have already changed.
+#
 # This is how fixes like security patches reach vaults that were already
 # deployed via the button before the fix shipped, without you having to
 # notice, ask, or manually copy files over.
@@ -201,6 +210,42 @@ jobs:
             cp "$src" "$p"
           done
 
+          # A create-only file being create-only is exactly why a workflow
+          # upgrade to it (new behavior, not a security fix — those already
+          # reach every vault via SECURITY.md above) would otherwise reach
+          # zero already-deployed vaults silently: the file never changes
+          # again after day one, and nothing ever tells the owner a newer
+          # version exists to look at. Same shape as the workflow-file
+          # problem below, same fix: surface it instead of applying it.
+          # Unlike workflows, .claude/ is not blocked from an Actions push,
+          # so this *could* force-overwrite — it deliberately doesn't, for
+          # the same customization reason CREATE_ONLY_PATHS exists at all.
+          for p in "${CREATE_ONLY_PATHS[@]}"; do
+            src=".template-upstream/$p"
+            [ -e "$src" ] || continue
+            pending="$(dirname "$p")/PENDING_SKILL_UPDATE.md"
+            if [ -e "$p" ] && ! cmp -s "$src" "$p"; then
+              {
+                echo "# Pending improve-skill update"
+                echo
+                echo "The canonical template's \`$p\` has changed since this vault's copy"
+                echo "was created — a workflow upgrade, not a security fix (those reach"
+                echo "this vault automatically via \`SECURITY.md\`). \`$p\` is yours to"
+                echo "customize, so this sync never overwrites it; the upstream version is"
+                echo "reproduced below for you to read, diff against your own copy, and"
+                echo "merge by hand — carrying over whatever you've customized. This file"
+                echo "disappears on its own once your copy matches upstream (or once you"
+                echo "delete it, if you're deliberately not taking the update)."
+                echo
+                echo '```markdown'
+                cat "$src"
+                echo '```'
+              } > "$pending"
+            elif [ -f "$pending" ]; then
+              rm -f "$pending"
+            fi
+          done
+
       - name: Flag workflow-file updates that can't be pushed directly
         run: |
           set -euo pipefail
@@ -314,4 +359,4 @@ jobs:
           gh pr create \
             --head "$SYNC_BRANCH" \
             --title "Kit update: sync from ${UPSTREAM_REPO}" \
-            --body "Automated sync of kit-managed files (\`.claude/\`, \`.gitignore\`, \`BACKUP.md\`, \`vault-mcp/\`) from the canonical template at [${UPSTREAM_REPO}](https://github.com/${UPSTREAM_REPO}). Review the diff before merging — this never auto-merges, and your notes/vault content are never touched. If \`.github/PENDING_WORKFLOW_UPDATE.md\` is part of this diff, it documents a change to one of the backup/sync workflow files themselves that needs a manual copy-paste — GitHub blocks this bot from pushing workflow-file updates directly."
+            --body "Automated sync of kit-managed files (\`.claude/\`, \`.gitignore\`, \`BACKUP.md\`, \`vault-mcp/\`) from the canonical template at [${UPSTREAM_REPO}](https://github.com/${UPSTREAM_REPO}). Review the diff before merging — this never auto-merges, and your notes/vault content are never touched. If \`.github/PENDING_WORKFLOW_UPDATE.md\` is part of this diff, it documents a change to one of the backup/sync workflow files themselves that needs a manual copy-paste — GitHub blocks this bot from pushing workflow-file updates directly. If \`.claude/skills/improve/PENDING_SKILL_UPDATE.md\` is part of this diff, the improve skill's workflow has an upstream update available — SKILL.md is yours to customize and is never overwritten automatically, so read the pending file and merge in by hand whatever you want to take."

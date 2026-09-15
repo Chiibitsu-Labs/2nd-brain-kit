@@ -105,11 +105,23 @@ the final state without checking whether it should be:
 **Promoting** means, in one pass:
 1. Write the actual lesson into its real home — wherever this vault (or
    its owner) keeps that kind of durable claim.
-2. Stamp the source note's frontmatter: `promoted: YYYY-MM-DD → <destination>`.
-3. Move its line from `## Open` to the top of `## Archive`:
+2. Stamp **every note the promotion subsumes** with
+   `promoted: YYYY-MM-DD → <destination>` — the newly-filed note always,
+   and, when this promotion was triggered by the duplicate-lesson rule
+   above, the existing note(s) it duplicates too. A promotion triggered by
+   a duplicate is not "write the new note, then separately handle the
+   old one" — it is one promotion with two or more source notes, and
+   every one of them gets stamped.
+3. Move **every** note stamped in step 2 from `## Open` to `## Archive`,
+   one line each:
    ```
    - [[YYYY-MM-DD-<slug>]] — promoted → <link to destination> · <one-line summary> (YYYY-MM-DD)
    ```
+   Leaving the duplicated note's line sitting in `## Open` after its
+   lesson has been promoted is the exact "two lines describing the same
+   thing" the triage step above exists to prevent — the point of
+   promoting on a duplicate is to close *both* notes, not just the one
+   that happened to trigger it.
 
 > **Where does a promotion go?** This kit ships no fixed set of
 > destination files (no `preferences.md`, `decisions.md`, or canon file) —
@@ -134,13 +146,22 @@ to `## Archive`:
 ```
 
 **Pending** (worth promoting, can't happen now): file it so it isn't
-silently stuck. This repo has no existing task-board convention, so use
-a GitHub issue on this repo unless the owner has since set up something
-else — link it from the index line, and don't stamp the note's
-frontmatter (it hasn't been promoted yet, only queued). The line stays in
-`## Open`, rewritten to say what it's waiting on:
+silently stuck. This repo has no existing task-board convention, so:
+
+- **A session with GitHub tooling** (Claude Code with `git`/`gh`, or
+  equivalent repo access) — open a GitHub issue on this repo, unless the
+  owner has since set up something else, and link it from the index line.
+- **A session reached only through the remote vault connector** has no
+  issue-creation tool — `read_file` / `write_file` / `list_files` is the
+  whole surface (§1). Don't block on a link you have no way to create:
+  state what it's waiting on directly in the index line instead, in
+  plain words, with no link.
+
+Either way, don't stamp the note's frontmatter (it hasn't been promoted
+yet, only queued). The line stays in `## Open`, rewritten to say what
+it's waiting on:
 ```
-- [[YYYY-MM-DD-<slug>]] — Open, waiting on <link>. (YYYY-MM-DD)
+- [[YYYY-MM-DD-<slug>]] — Open, waiting on <link or plain-words reason>. (YYYY-MM-DD)
 ```
 
 **Format rules for every index line, in both sections:**
@@ -154,21 +175,29 @@ frontmatter (it hasn't been promoted yet, only queued). The line stays in
 
 ## 5. Save
 
-- Working via the remote vault connector: use its write tool for every
-  file this pass touched.
-- Working on a local clone (Claude Code): `git add` **every file this
+- **Working via the remote vault connector**: a plain filing (the note,
+  the index) can go in any order. A promotion or resolution cannot — the
+  connector commits one file per `write_file` call, with no way to group
+  several into one commit, so **write in the order [`SECURITY.md`](SECURITY.md)
+  §5 specifies** (destination file(s), then every stamped note's
+  frontmatter, then the index last) and stop immediately if any write
+  fails rather than continuing on to the index. That file is the
+  authority on why this order, and on the reconciliation check every
+  connector session owes at the start of its next piece of work.
+- **Working on a local clone (Claude Code)**: `git add` **every file this
   pass touched, by exact path** — never `-A` or `.`. A plain filing is
   two files (the note, the index); a promotion or a resolution can be
   more (the note, the index, a destination file, and any other note whose
   frontmatter also got stamped as part of the same retirement) — stage
-  and commit all of them together, in one commit, or not at all. Commit
-  with `git commit --only -m "Improve: <one-line summary>" -- <path1> <path2> ...`,
+  and commit all of them together, in one real commit, or not at all.
+  Commit with `git commit --only -m "Improve: <one-line summary>" -- <path1> <path2> ...`,
   and push the current branch. A promotion that commits the archive line
   without the frontmatter stamp (or the reverse) is a half-committed
-  promotion — exactly the kind of drift this system exists to prevent.
-  The exact form matters and the reasoning behind every part of it — why
-  `-m` precedes `--`, why `--only` is not optional — is in
-  [`SECURITY.md`](SECURITY.md) §5, which is the authority on it.
+  promotion — exactly the kind of drift this system exists to prevent,
+  and exactly what a single real git commit rules out. The exact form
+  matters and the reasoning behind every part of it — why `-m` precedes
+  `--`, why `--only` is not optional — is in [`SECURITY.md`](SECURITY.md)
+  §5, which is the authority on it.
 
 ## 6. Tell the owner
 
