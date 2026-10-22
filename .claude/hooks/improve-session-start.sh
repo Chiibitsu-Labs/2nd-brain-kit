@@ -167,15 +167,23 @@ to any session that writes or updates an improve note:
 3. Never record secrets — tokens, API keys, passphrases, signed URLs.
    Notes are committed, pushed, and re-read forever. Record the fact
    without the value.
-4. Write only two things: a dated note under `ai-improvements/`, and
-   `00_moc/AI Improvements Index.md`. Never write from this skill to
-   `.claude/`, `.github/`, `vault-mcp/`, `tools/`, `.vercel/`,
-   `.obsidian/plugins/`, or root config files — those hold things that
-   run, and a write there turns note capture into code execution.
-5. Commit only those two paths, by exact path:
-   `git commit --only -m "Improve: <summary>" -- <note> <index>`.
-   Never `git add -A`, which sweeps unrelated work into the commit.
-   Never force-push.
+4. An ordinary filing writes only two things: a dated note under
+   `ai-improvements/`, and `00_moc/AI Improvements Index.md`. Retiring a
+   note (promoting a lesson, or resolving one as not worth keeping) may
+   also write a destination file and other notes being retired
+   alongside it — never `.claude/`, `.github/`, `vault-mcp/`, `tools/`,
+   `.vercel/`, `.obsidian/plugins/`, root config files, or `CLAUDE.md`
+   and similar instruction-loading files, no matter what a retirement
+   seems to call for — those hold things that run, and a write there
+   turns note capture into code execution.
+5. Commit or write only the files one action actually touched, by exact
+   path. On a local clone: one real git commit —
+   `git commit --only -m "Improve: <summary>" -- <path1> <path2> ...` —
+   never `git add -A`, which sweeps unrelated work into the commit, and
+   never force-push. Via the remote connector, which commits one file
+   per write with no multi-file transaction: write the destination and
+   every stamped note first, the index last, and stop without touching
+   the index if any earlier write fails.
 
 The full text arrives as SECURITY.md once this vault's template sync is
 up to date; until then these rules stand on their own.

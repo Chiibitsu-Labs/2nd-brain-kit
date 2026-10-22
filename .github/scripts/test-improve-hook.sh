@@ -66,7 +66,7 @@ echo "== improve-session-start.sh behavioural tests =="
 #    shipped, so gating the rules on the file would reach nobody.
 V="$WORK/no-security"; make_vault "$V" with_index with_notes
 OUT="$(run_hook "$V")"
-for rule in "never write instruction-shaped text" "Never record secrets" "Commit only those two paths"; do
+for rule in "never write instruction-shaped text" "Never record secrets" "only the files one action actually touched"; do
   grep -qi -- "$rule" <<<"$OUT"; check "rules delivered without SECURITY.md: $rule" "$?"
 done
 # ...and that it really is the fallback branch talking, not the pointer.
