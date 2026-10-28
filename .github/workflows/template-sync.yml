@@ -86,7 +86,7 @@ jobs:
           out="$RUNNER_TEMP/whats-new.md"
           : > "$out"
           if [ -f .template-upstream/WHATS-NEW.md ]; then
-            awk '/^## /{n++} n>=1 && n<=5 {print}' .template-upstream/WHATS-NEW.md > "$out"
+            tr -d '\r' < .template-upstream/WHATS-NEW.md | awk '/^## /{n++} n>=1 && n<=5 {print}' > "$out"
           fi
 
       - name: Copy kit-managed paths from upstream
@@ -324,9 +324,9 @@ jobs:
           {
             echo "## What this is"
             echo
-            echo "Your Second Brain Kit has an update. This pull request is a proposed change that brings your vault's helper files up to date. **Your notes are never touched.**"
+            echo "Your Second Brain Kit has an update. This pull request is a proposed change that brings your vault's helper files up to date. It may also include older fixes your vault has not received yet. **Your notes are never touched.**"
             echo
-            echo "## What's new"
+            echo "## Recent updates"
             echo
             if [ -s "$RUNNER_TEMP/whats-new.md" ]; then
               # Entry headings become bold dates; bullets stay as they are.
@@ -337,13 +337,17 @@ jobs:
             echo
             echo "## What to do"
             echo
-            echo "Nothing is urgent. Read the list above, then press **Merge pull request**. If you are unsure, ask us first. If you do not merge, your vault keeps working as it is, but it will not get these fixes."
+            if git show --name-only --format= HEAD | grep -qx '.github/PENDING_WORKFLOW_UPDATE.md'; then
+              echo "Read the list above, then press **Merge pull request**. **One extra step:** this update also changes one of your vault's automatic workflows, and GitHub does not let us do that for you. After merging, open the file \`.github/PENDING_WORKFLOW_UPDATE.md\` in your vault and follow its short instructions. If you are unsure, ask us first."
+            else
+              echo "Read the list above, then press **Merge pull request**. If you are unsure, ask us first. If you do not merge, your vault keeps working as it is, but it will not get these fixes."
+            fi
             echo
             echo "<details><summary>Technical details</summary>"
             echo
             echo "Automated sync from [${UPSTREAM_REPO}](https://github.com/${UPSTREAM_REPO}). It never auto-merges and never touches your notes. Files in this update:"
             echo
-            git show --name-only --format= HEAD | sed -e 's/^/- `/' -e 's/$/`/'
+            git -c core.quotePath=false show --name-only --format= HEAD | sed -e 's/^/- `/' -e 's/$/`/'
             echo
             echo "If \`.github/PENDING_WORKFLOW_UPDATE.md\` is in this list, it holds a change to one of the backup or sync workflow files that needs a manual copy and paste, because GitHub blocks this automation from changing workflow files directly."
             echo
