@@ -337,7 +337,7 @@ jobs:
             echo
             echo "## What to do"
             echo
-            if git show --name-only --format= HEAD | grep -qx '.github/PENDING_WORKFLOW_UPDATE.md'; then
+            if git show --name-only --diff-filter=ACMR --format= HEAD | grep -qx '.github/PENDING_WORKFLOW_UPDATE.md'; then
               echo "Read the list above, then press **Merge pull request**. **One extra step:** this update also changes one of your vault's automatic workflows, and GitHub does not let us do that for you. After merging, open the file \`.github/PENDING_WORKFLOW_UPDATE.md\` in your vault and follow its short instructions. If you are unsure, ask us first."
             else
               echo "Read the list above, then press **Merge pull request**. If you are unsure, ask us first. If you do not merge, your vault keeps working as it is, but it will not get these fixes."
