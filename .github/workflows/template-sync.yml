@@ -349,8 +349,6 @@ jobs:
             echo
             git -c core.quotePath=false show --name-only --format= HEAD | sed -e 's/^/- `/' -e 's/$/`/'
             echo
-            echo "If \`.github/PENDING_WORKFLOW_UPDATE.md\` is in this list, it holds a change to one of the backup or sync workflow files that needs a manual copy and paste, because GitHub blocks this automation from changing workflow files directly."
-            echo
             echo "</details>"
           } > "$BODY"
           if gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '. | length' | grep -qv '^0$'; then
