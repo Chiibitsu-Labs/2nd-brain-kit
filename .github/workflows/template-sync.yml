@@ -77,6 +77,18 @@ jobs:
           git clone --depth 1 --branch "$UPSTREAM_BRANCH" \
             "https://github.com/${UPSTREAM_REPO}.git" .template-upstream
 
+      - name: Read the plain-language "what's new" from the template
+        run: |
+          set -euo pipefail
+          # Outside the working tree on purpose: this file must never be
+          # staged into the sync commit. Newest five entries only, so an
+          # update that skips several releases stays readable.
+          out="$RUNNER_TEMP/whats-new.md"
+          : > "$out"
+          if [ -f .template-upstream/WHATS-NEW.md ]; then
+            tr -d '\r' < .template-upstream/WHATS-NEW.md | awk '/^## /{n++} n>=1 && n<=5 {print}' > "$out"
+          fi
+
       - name: Copy kit-managed paths from upstream
         env:
           # Through the environment, never interpolated into the script
@@ -301,17 +313,50 @@ jobs:
           # no concurrent human work a lease would protect against anyway.
           git push --force origin "$SYNC_BRANCH"
 
-      - name: Open pull request if one isn't already open
+      - name: Open the pull request, or refresh its description
         if: steps.diff.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          BODY="$RUNNER_TEMP/pr-body.md"
+          TITLE="Update from your Second Brain Kit"
+          {
+            echo "## What this is"
+            echo
+            echo "Your Second Brain Kit has an update. This pull request is a proposed change that brings your vault's helper files up to date. It may also include older fixes your vault has not received yet. **Your notes are never touched.**"
+            echo
+            echo "## Recent updates"
+            echo
+            if [ -s "$RUNNER_TEMP/whats-new.md" ]; then
+              # Entry headings become bold dates; bullets stay as they are.
+              sed -e 's/^## \(.*\)$/**\1**/' "$RUNNER_TEMP/whats-new.md"
+            else
+              echo "This update carries fixes and improvements to your vault's helper files."
+            fi
+            echo
+            echo "## What to do"
+            echo
+            if git show --name-only --diff-filter=ACMR --format= HEAD | grep -qx '.github/PENDING_WORKFLOW_UPDATE.md'; then
+              echo "Read the list above, then press **Merge pull request**. **One extra step:** this update also changes one of your vault's automatic workflows, and GitHub does not let us do that for you. After merging, open the file \`.github/PENDING_WORKFLOW_UPDATE.md\` in your vault and follow its short instructions. If you are unsure, ask us first."
+            else
+              echo "Read the list above, then press **Merge pull request**. If you are unsure, ask us first. If you do not merge, your vault keeps working as it is, but it will not get these fixes."
+            fi
+            echo
+            echo "<details><summary>Technical details</summary>"
+            echo
+            echo "Automated sync from [${UPSTREAM_REPO}](https://github.com/${UPSTREAM_REPO}). It never auto-merges and never touches your notes. Files in this update:"
+            echo
+            git -c core.quotePath=false show --name-only --format= HEAD | sed -e 's/^/- `/' -e 's/$/`/'
+            echo
+            echo "</details>"
+          } > "$BODY"
           if gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '. | length' | grep -qv '^0$'; then
-            echo "A sync PR is already open on '$SYNC_BRANCH' — it now reflects this run's diff. Nothing further to do."
+            echo "A sync PR is already open on '$SYNC_BRANCH' — refreshing its description to match this run."
+            gh pr edit "$SYNC_BRANCH" --title "$TITLE" --body-file "$BODY"
             exit 0
           fi
           gh pr create \
             --head "$SYNC_BRANCH" \
-            --title "Kit update: sync from ${UPSTREAM_REPO}" \
-            --body "Automated sync of kit-managed files (\`.claude/\`, \`.gitignore\`, \`BACKUP.md\`, \`vault-mcp/\`) from the canonical template at [${UPSTREAM_REPO}](https://github.com/${UPSTREAM_REPO}). Review the diff before merging — this never auto-merges, and your notes/vault content are never touched. If \`.github/PENDING_WORKFLOW_UPDATE.md\` is part of this diff, it documents a change to one of the backup/sync workflow files themselves that needs a manual copy-paste — GitHub blocks this bot from pushing workflow-file updates directly."
+            --title "$TITLE" \
+            --body-file "$BODY"
