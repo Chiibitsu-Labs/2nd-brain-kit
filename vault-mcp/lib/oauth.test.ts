@@ -6,7 +6,7 @@
 // Needs OAUTH_SIGNING_SECRET (>= 32 chars); `npm test` generates one, so
 // nothing here depends on a real deployment's secret.
 import crypto from "node:crypto";
-import { issueSignedToken, verifySignedToken } from "./oauth";
+import { isAllowedRedirectUri, issueSignedToken, verifySignedToken } from "./oauth";
 
 let fail = 0;
 function check(name: string, cond: boolean) {
@@ -76,6 +76,18 @@ delete process.env.OAUTH_REQUIRE_TYP;
 check("tampered payload refused", verifySignedToken("x" + access, "access_token") === null);
 const expired = issueSignedToken("access_token", { sub: "vault-owner" }, -1);
 check("expired token refused", verifySignedToken(expired, "access_token") === null);
+
+// Redirect allowlist: the AI surfaces that may receive an authorization
+// code, by origin only. Anything else — including a subdomain spoof or
+// plain http — is refused in place, never redirected to.
+check("claude.ai callback allowed", isAllowedRedirectUri("https://claude.ai/api/mcp/auth_callback"));
+check("chatgpt.com callback allowed", isAllowedRedirectUri("https://chatgpt.com/connector_platform_oauth_redirect"));
+check("Uno callback allowed", isAllowedRedirectUri("https://uno.chiibitsu.com/api/oauth/vault/callback"));
+check("Chibie callback allowed", isAllowedRedirectUri("https://chibie.chiibitsu.com/api/oauth/vault/callback"));
+check("other chiibitsu.com host refused", !isAllowedRedirectUri("https://www.chiibitsu.com/api/oauth/vault/callback"));
+check("look-alike host refused", !isAllowedRedirectUri("https://uno.chiibitsu.com.evil.example/callback"));
+check("http refused", !isAllowedRedirectUri("http://uno.chiibitsu.com/api/oauth/vault/callback"));
+check("garbage refused", !isAllowedRedirectUri("not a url"));
 
 console.log(fail === 0 ? "\nall passed" : `\n${fail} FAILED`);
 process.exit(fail === 0 ? 0 : 1);

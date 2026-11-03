@@ -13,6 +13,13 @@ export const ALLOWED_REDIRECT_ORIGINS = [
   "https://claude.com",
   "https://chatgpt.com",
   "https://chat.openai.com",
+  // Chiibitsu Labs' own companions (Uno, Chibie) connect a vault the same
+  // way claude.ai does — discovery, dynamic registration, PKCE, and the
+  // owner passphrase on this server's own page. Same trust basis as the
+  // entries above: the passphrase is the gate; this only says where a
+  // code may be sent back to.
+  "https://uno.chiibitsu.com",
+  "https://chibie.chiibitsu.com",
 ];
 
 const SECRET = process.env.OAUTH_SIGNING_SECRET || "";
