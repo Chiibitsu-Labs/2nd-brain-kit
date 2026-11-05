@@ -12,6 +12,13 @@
 #
 # Part of the Second Brain Kit by Chiibitsu Labs (labs@chiibitsu.com).
 
+# shellcheck disable=SC2319
+# SC2319 (new in recent shellcheck releases) warns that `$?` after a
+# `[[ ... ]]` refers to a condition. That is exactly what every
+# `[[ ... ]]; check "..." "$?"` line below means: the condition's own result
+# is handed to check(). CI installs shellcheck unpinned, so this began
+# failing with no change to this file. Scoped to this one code, this one file.
+
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
