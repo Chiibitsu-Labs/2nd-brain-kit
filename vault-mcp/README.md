@@ -184,8 +184,9 @@ step-by-step guide covers the current path, and both are checked there.
 
 **Uno / Chibie (Chiibitsu Labs' companions)**: send `/connect-vault` in
 your chat, paste the same URL, and enter the owner passphrase on the page
-that opens — the same flow as claude.ai. `uno.chiibitsu.com` and
-`chibie.chiibitsu.com` are in the redirect_uri allowlist for this.
+that opens — the same flow as claude.ai. `uno.chiibitsu.com`,
+`chibie.chiibitsu.com` and `chibie.vercel.app` (the address the companions
+use in production today) are in the redirect_uri allowlist for this.
 
 ## Security model
 
