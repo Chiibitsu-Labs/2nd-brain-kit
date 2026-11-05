@@ -84,6 +84,10 @@ check("claude.ai callback allowed", isAllowedRedirectUri("https://claude.ai/api/
 check("chatgpt.com callback allowed", isAllowedRedirectUri("https://chatgpt.com/connector_platform_oauth_redirect"));
 check("Uno callback allowed", isAllowedRedirectUri("https://uno.chiibitsu.com/api/oauth/vault/callback"));
 check("Chibie callback allowed", isAllowedRedirectUri("https://chibie.chiibitsu.com/api/oauth/vault/callback"));
+check("companions' production address allowed", isAllowedRedirectUri("https://chibie.vercel.app/api/oauth/vault/callback"));
+check("other vercel.app hosts refused", !isAllowedRedirectUri("https://not-chibie.vercel.app/api/oauth/vault/callback"));
+check("vercel.app look-alike refused", !isAllowedRedirectUri("https://chibie.vercel.app.evil.example/callback"));
+check("bare vercel.app refused", !isAllowedRedirectUri("https://vercel.app/api/oauth/vault/callback"));
 check("other chiibitsu.com host refused", !isAllowedRedirectUri("https://www.chiibitsu.com/api/oauth/vault/callback"));
 check("look-alike host refused", !isAllowedRedirectUri("https://uno.chiibitsu.com.evil.example/callback"));
 check("http refused", !isAllowedRedirectUri("http://uno.chiibitsu.com/api/oauth/vault/callback"));

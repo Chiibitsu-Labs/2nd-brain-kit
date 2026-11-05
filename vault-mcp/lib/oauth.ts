@@ -20,6 +20,11 @@ export const ALLOWED_REDIRECT_ORIGINS = [
   // code may be sent back to.
   "https://uno.chiibitsu.com",
   "https://chibie.chiibitsu.com",
+  // The address the companions' production deployment actually sends as
+  // its callback today (found on the first live connect, 2026-11-05: the
+  // two entries above were refused). One exact origin, owned by the same
+  // project as the two above; not a wildcard over vercel.app.
+  "https://chibie.vercel.app",
 ];
 
 const SECRET = process.env.OAUTH_SIGNING_SECRET || "";
